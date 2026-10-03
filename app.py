@@ -5,7 +5,7 @@ import streamlit.components.v1 as components
 import numpy as np
 import umap
 import plotly.express as px
-from backend import QdrantVectorEngine, HybridRetrievalPipeline, run_latency_benchmark, run_ragas_eval
+from backend import QdrantVectorEngine, MathematicalVectorEngine, HybridRetrievalPipeline, run_latency_benchmark, run_ragas_eval
 
 # Load environment variables
 load_dotenv()
@@ -342,9 +342,20 @@ with tab_search:
             card_class = "passage-card passage-card-hybrid"
 
         if candidates:
-            cand_indices = list(set([res[2] for res in candidates]))
-            cand_vecs = engine.doc_vectors[cand_indices]
-            local_svd_dims = engine.svd_entropy_analysis(cand_vecs)
+            cand_indices = []
+            for res in candidates:
+                item_id = res[2]
+                if isinstance(item_id, int):
+                    cand_indices.append(item_id)
+                elif isinstance(item_id, str) and item_id in engine.doc_ids:
+                    cand_indices.append(engine.doc_ids.index(item_id))
+
+            cand_indices = list(set(cand_indices))
+            if cand_indices:
+                cand_vecs = engine.doc_vectors[cand_indices]
+                local_svd_dims = engine.svd_entropy_analysis(cand_vecs)
+            else:
+                local_svd_dims = svd_dims
         else:
             local_svd_dims = svd_dims
 
@@ -360,7 +371,7 @@ with tab_search:
                     st.markdown(
                         f"""
                         <div class="{card_class}">
-                            <div class="score-badge">Rank #{idx+1} • Cosine Score: {score:.4f}</div>
+                            <div class="score-badge">Rank #{idx+1} • Score: {score:.4f}</div>
                             <div style="color: #334155; font-size: 0.95rem; line-height: 1.5;">{text}</div>
                         </div>
                         """,

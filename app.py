@@ -143,7 +143,7 @@ st.markdown("""
 
 @st.cache_resource
 def initialize_system():
-    # 1. Initialize the streamed dataset (fixes NameError)
+    # Initialize the streamed dataset
     dataset = load_dataset(
         "sentence-transformers/msmarco", 
         "corpus", 
@@ -152,12 +152,16 @@ def initialize_system():
     )
 
     sample_passages = []
-    # Note: Processing 100,000 passages in-memory during startup on Streamlit Cloud 
+    # Note: Processing very large corpora in-memory during startup on Streamlit Cloud 
     # may cause RAM out-of-memory errors. 1,000 - 5,000 is recommended for instant startup.
     for i, row in enumerate(dataset.take(1000)):
         # Extract official IDs and text
         official_id = row.get("_id") or row.get("passage_id")
         official_text = row.get("text") or row.get("passage")
+
+        # Skip rows with no text (TF-IDF would crash on None)
+        if not official_text:
+            continue
         
         sample_passages.append({
             "id": str(official_id),
@@ -251,7 +255,7 @@ with st.sidebar:
             st.toast(f"Upserted document `{new_id}`!", icon="⚡")
 
     with mutation_tab_delete:
-        del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
+        del_id = st.text_input("Doc ID to Delete", "ms_marco_999", key="delete_id_input")
         if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
             if hasattr(engine, "delete_passage"):
                 success = engine.delete_passage(del_id)
@@ -343,36 +347,36 @@ with tab_search:
 # Tab 2: System Benchmarks
 with tab_benchmark:
     st.markdown("##### NFR Latency & Evaluation Suite")
-    st.caption("Executes automated query sequences to record latency percentiles and RAGAS metric scores.")
+    st.caption("Executes automated query sequences to record latency percentiles and context precision/recall scores.")
     
     st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("▶ Run Full System Benchmark Suite", type="primary"):
-          with st.spinner("Executing benchmarks..."):
-              bench_query = query if query else "What is MS MARCO passage ranking?"
-              p50, p95 = run_latency_benchmark(pipeline)
-              eval_res = run_ragas_eval(pipeline, bench_query, groq_key,
-                                        category_filter=category_filter, mode=mode_key)
-  
-              lat_ok = p95 < 300
-              prec_ok = eval_res["precision"] > 0.75
-              rec_ok = eval_res["recall"] > 0.70
-  
-              m1, m2, m3, m4 = st.columns(4)
-              with m1:
-                  st.metric("Median Latency (p50)", f"{p50:.2f} ms")
-              with m2:
-                  st.metric("Tail Latency (p95)", f"{p95:.2f} ms",
-                            delta="PASSED (<300ms)" if lat_ok else "FAILED (>=300ms)",
-                            delta_color="normal" if lat_ok else "inverse")
-              with m3:
-                  st.metric("Context Precision", f"{eval_res['precision']:.4f}",
-                            delta="PASSED (>0.75)" if prec_ok else "BELOW TARGET (0.75)",
-                            delta_color="normal" if prec_ok else "inverse")
-              with m4:
-                  st.metric("Context Recall", f"{eval_res['recall']:.4f}",
-                            delta="PASSED (>0.70)" if rec_ok else "BELOW TARGET (0.70)",
-                            delta_color="normal" if rec_ok else "inverse")
-              st.caption(f"Metric source: {eval_res['source']}")
+    if st.button("▶ Run Full System Benchmark Suite", type="primary"):
+        with st.spinner("Executing benchmarks..."):
+            bench_query = query if query else "What is MS MARCO passage ranking?"
+            p50, p95 = run_latency_benchmark(pipeline)
+            eval_res = run_ragas_eval(pipeline, bench_query, groq_key,
+                                      category_filter=category_filter, mode=mode_key)
+
+            lat_ok = p95 < 300
+            prec_ok = eval_res["precision"] > 0.75
+            rec_ok = eval_res["recall"] > 0.70
+
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.metric("Median Latency (p50)", f"{p50:.2f} ms")
+            with m2:
+                st.metric("Tail Latency (p95)", f"{p95:.2f} ms",
+                          delta="PASSED (<300ms)" if lat_ok else "FAILED (>=300ms)",
+                          delta_color="normal" if lat_ok else "inverse")
+            with m3:
+                st.metric("Context Precision", f"{eval_res['precision']:.4f}",
+                          delta="PASSED (>0.75)" if prec_ok else "BELOW TARGET (0.75)",
+                          delta_color="normal" if prec_ok else "inverse")
+            with m4:
+                st.metric("Context Recall", f"{eval_res['recall']:.4f}",
+                          delta="PASSED (>0.70)" if rec_ok else "BELOW TARGET (0.70)",
+                          delta_color="normal" if rec_ok else "inverse")
+            st.caption(f"Metric source: {eval_res['source']}")
 
 # Tab 3: UMAP Topology & Nearest Neighbors Analysis
 with tab_umap:
@@ -380,7 +384,7 @@ with tab_umap:
     st.caption("Maps query embedding proximity relative to corpus vectors via 2D UMAP projection and cosine metric distance.")
     
     st.markdown("<br>", unsafe_allow_html=True)
-    active_query = query if 'query' in locals() and query else "What is MS MARCO passage ranking?"
+    active_query = query if query else "What is MS MARCO passage ranking?"
     
     if len(engine.doc_passages) > 0:
         from sklearn.metrics.pairwise import cosine_distances

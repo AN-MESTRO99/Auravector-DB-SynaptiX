@@ -141,26 +141,46 @@ st.markdown("""
 
 @st.cache_resource
 def initialize_system():
-    """Generates 100 unique MS MARCO topic passages and initializes index."""
+    """Generates 100 unique MS MARCO topic passages with rich vocabulary and initializes index."""
     base_domains = [
-        "Singular Value Decomposition (SVD) isolates principal variance across latent dimensions.",
-        "BM25 keyword search calculates term frequency and inverse document frequency saturation.",
-        "Reciprocal Rank Fusion (RRF) unifies sparse keyword search and dense similarity scores.",
-        "Cross-Encoder attention reranking rescores candidate passages to eliminate hallucinations.",
-        "Pre-retrieval metadata filtering executes structural constraints at the payload level.",
-        "Dense vector embeddings compress text into spatial vector representations via bi-encoders.",
-        "High-precision vector engines enforce sub-300ms p95 latency constraints on consumer hardware.",
-        "Context precision and context recall metrics evaluate factual accuracy in enterprise RAG.",
-        "Scalar quantization INT8 aligns embedding representations with CPU SIMD registers.",
-        "Topological UMAP projections map high-dimensional vector spaces into 2D scatter clusters."
+        "Singular Value Decomposition (SVD) performs dimensionality reduction by isolating principal variance across latent semantic space dimensions.",
+        "BM25 keyword search calculates term frequency and inverse document frequency saturation for sparse lexical retrieval ranking.",
+        "Reciprocal Rank Fusion (RRF) unifies sparse keyword search and dense similarity scores into a single fused ranked list.",
+        "Cross-Encoder attention reranking rescores candidate passages using pairwise query-document relevance to eliminate hallucinations.",
+        "Pre-retrieval metadata filtering executes structural constraints at the payload level before vector similarity computation begins.",
+        "Dense vector embeddings compress text into high-dimensional spatial representations via bi-encoder neural network architectures.",
+        "High-precision vector engines enforce sub-300ms p95 latency constraints on consumer hardware through approximate nearest neighbor indexing.",
+        "Context precision and context recall metrics evaluate factual groundedness and coverage in enterprise RAG evaluation frameworks.",
+        "Scalar quantization compresses INT8 embedding representations to align with CPU SIMD register widths for accelerated retrieval.",
+        "Topological UMAP projections map high-dimensional vector spaces into 2D scatter clusters preserving local neighbourhood structure.",
+        "MS MARCO passage ranking benchmark evaluates retrieval quality across large-scale question answering and information retrieval tasks.",
+        "Approximate nearest neighbor search algorithms such as HNSW and IVF-Flat enable sub-linear time retrieval over million-scale corpora.",
+        "Hybrid retrieval pipelines combine dense semantic search with sparse BM25 lexical matching to maximize both precision and recall scores.",
+        "Context recall in RAG systems measures the fraction of ground truth information present across all retrieved context passages.",
+        "Context precision quantifies the proportion of retrieved passages that contain relevant factual information for the given user query.",
+        "Latent Dirichlet Allocation discovers hidden topic distributions across document corpora using probabilistic generative models.",
+        "Vector space models represent documents and queries as geometric points enabling cosine similarity ranking of search results.",
+        "Semantic search encodes natural language queries into embedding vectors to retrieve conceptually similar passages beyond keyword overlap.",
+        "Information retrieval evaluation metrics including MRR, NDCG, and MAP measure ranking quality across multiple query-passage relevance judgements.",
+        "Passage reranking with cross-attention transformers improves retrieval precision by scoring query-passage pairs jointly rather than independently.",
+        "Knowledge graph embeddings capture relational structure between entities enabling reasoning and retrieval over structured knowledge bases.",
+        "Query expansion augments the original query with synonyms and related terms to improve coverage and reduce vocabulary mismatch.",
+        "Encoder-decoder architectures support generative retrieval by directly mapping queries to document identifiers without explicit index lookup.",
+        "Multi-vector retrieval models such as ColBERT compute late-interaction scores between query and document token embeddings for fine-grained matching.",
+        "Negative sampling strategies in contrastive learning improve bi-encoder training by selecting hard negatives from top retrieved passages.",
+        "Dimensionality reduction techniques including PCA, SVD, and UMAP project embedding spaces into lower dimensions for visualization and efficiency.",
+        "Retrieval augmented generation grounds large language model outputs in retrieved factual passages to reduce hallucination and improve recall.",
+        "Sparse retrieval with inverted index structures supports exact keyword matching and efficient boolean query evaluation at scale.",
+        "Re-ranking with listwise loss functions optimises the full ranked list jointly rather than scoring each passage independently.",
+        "Evaluation of retrieval systems on the BEIR benchmark measures zero-shot generalization across diverse domain-specific information needs.",
     ]
-    
+
     sample_passages = []
     for i in range(100):
         domain_text = base_domains[i % len(base_domains)]
         sample_passages.append({
             "id": f"ms_marco_{i}",
-            "text": f"MS MARCO Passage #{i}: [Specifier-{i}] {domain_text} Contextual marker {i*37 % 100}.",
+            "text": f"MS MARCO Passage #{i}: {domain_text} [variant-{i}]",
             "category": "tech" if i % 2 == 0 else "finance"
         })
 
@@ -353,7 +373,13 @@ with tab_benchmark:
     if st.button("▶ Run Full System Benchmark Suite", type="primary"):
         with st.spinner("Executing benchmarks..."):
             p50, p95 = run_latency_benchmark(pipeline)
-            eval_res = run_ragas_eval(pipeline, query if 'query' in locals() else "What is MS MARCO passage ranking?", groq_key)
+            eval_query = st.session_state.get("live_query_input", "What is MS MARCO passage ranking?")
+            eval_res = run_ragas_eval(
+                pipeline,
+                eval_query,
+                groq_key,
+                mode=retrieval_mode
+            )
 
             # Persist live RAGAS results so KPI cards stay up-to-date
             st.session_state["ragas_precision"] = eval_res["precision"]

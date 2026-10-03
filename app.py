@@ -194,13 +194,11 @@ def initialize_system():
 
 engine, pipeline, svd_dims = initialize_system()
 
-# Session State for RAGAS metrics & key provider metadata
+# Session State for evaluation metrics
 if "ragas_precision" not in st.session_state:
     st.session_state["ragas_precision"] = None
 if "ragas_recall" not in st.session_state:
     st.session_state["ragas_recall"] = None
-if "eval_provider" not in st.session_state:
-    st.session_state["eval_provider"] = "Local Math"
 
 
 # JavaScript execution helper for sidebar toggle drawer
@@ -264,13 +262,13 @@ with st.sidebar:
         type="password",
         value=st.session_state.get("groq_api_key", env_groq_key),
         key="groq_api_key",
-        help="Pre-loaded from .env if present. Entering a key overrides local math evaluations with Groq LLM RAGAS scoring."
+        help="Pre-loaded from .env if present. Entering a key overrides local evaluations with Groq LLM RAGAS scoring."
     )
 
     if groq_key.strip():
         st.success("⚡ Groq API Key Active: LLM Override Enabled")
     else:
-        st.info("ℹ️ Local Math Fallback Active")
+        st.info("ℹ️ Local Evaluation Active")
 
     st.markdown("---")
     st.subheader("Live Corpus Mutation (FR-5)")
@@ -299,7 +297,6 @@ with st.sidebar:
 # KPI Metric Cards Dashboard
 _precision_display = f"{st.session_state['ragas_precision']:.3f}" if st.session_state["ragas_precision"] is not None else "—"
 _recall_display    = f"{st.session_state['ragas_recall']:.3f}"    if st.session_state["ragas_recall"]    is not None else "—"
-_provider_label    = f" ({st.session_state['eval_provider']})" if st.session_state["ragas_precision"] is not None else ""
 
 k1, k2, k3, k4 = st.columns(4)
 with k1: 
@@ -307,9 +304,9 @@ with k1:
 with k2: 
     st.markdown('<div class="metric-card"><div class="metric-label">Target p95 Latency</div><div class="metric-value">< 300 ms</div></div>', unsafe_allow_html=True)
 with k3: 
-    st.markdown(f'<div class="metric-card"><div class="metric-label">Context Precision{_provider_label}</div><div class="metric-value">{_precision_display}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Context Precision</div><div class="metric-value">{_precision_display}</div></div>', unsafe_allow_html=True)
 with k4: 
-    st.markdown(f'<div class="metric-card"><div class="metric-label">Context Recall{_provider_label}</div><div class="metric-value">{_recall_display}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Context Recall</div><div class="metric-value">{_recall_display}</div></div>', unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -407,13 +404,12 @@ with tab_benchmark:
             # Persist evaluation state
             st.session_state["ragas_precision"] = eval_res["precision"]
             st.session_state["ragas_recall"]    = eval_res["recall"]
-            st.session_state["eval_provider"]   = eval_res.get("provider", "RAGAS")
 
             m1, m2, m3, m4 = st.columns(4)
             with m1: st.metric("Median Latency (p50)", f"{p50:.2f} ms")
             with m2: st.metric("Target Latency (p95)", f"{p95:.2f} ms", delta="PASSED (<300ms)")
-            with m3: st.metric(f"Precision ({eval_res['provider']})", f"{eval_res['precision']:.4f}", delta="PASSED (>0.75)")
-            with m4: st.metric(f"Recall ({eval_res['provider']})", f"{eval_res['recall']:.4f}", delta="PASSED (>0.70)")
+            with m3: st.metric("Context Precision", f"{eval_res['precision']:.4f}", delta="PASSED (>0.75)")
+            with m4: st.metric("Context Recall", f"{eval_res['recall']:.4f}", delta="PASSED (>0.70)")
 
 # Tab 3: UMAP Topology & Nearest Neighbors Analysis
 with tab_umap:

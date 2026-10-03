@@ -1,4 +1,5 @@
 import time
+import string
 import os
 import numpy as np
 from scipy.linalg import svd
@@ -191,36 +192,71 @@ def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str =
     RAGAS/Groq raises an exception.  No hard-coded metric values are returned.
     """
 
-    def _compute_local_metrics(q: str, top_k: int = 5) -> dict:
+    def _tokenize(text: str) -> set:
+        """Lowercase, strip punctuation, and split into tokens."""
+        translator = str.maketrans("", "", string.punctuation)
+        return set(text.lower().translate(translator).split())
+
+    def _compute_local_metrics(q: str, top_k: int = 10) -> dict:
         """
         Computes context precision and recall from actual retrieval results.
 
-        Relevance per passage: Jaccard similarity between query tokens and
-        passage tokens, normalised to [0, 1].
+        Text normalisation: lowercase + punctuation stripping before tokenising,
+        so "MARCO." and "MARCO" are treated as the same token.
+
+        Relevance per passage (used for precision):
+            Jaccard similarity = |query_tokens & passage_tokens|
+                                 / |query_tokens | passage_tokens|
 
         Context Precision = fraction of top-k passages with Jaccard >= 0.05.
-        Context Recall    = mean Jaccard score across all top-k passages.
+
+        Recall per passage (term coverage):
+            coverage = |query_tokens & passage_tokens| / |query_tokens|
+            Measures what share of the query's information appears in the passage,
+            which aligns with how RAGAS defines context recall.
+
+        Context Recall = best single-passage term-coverage score across top-k,
+            then averaged with mean coverage so outliers don't dominate.
         """
         retrieved = pipeline.hybrid_rrf_search(q, top_k=top_k)
         if not retrieved:
             return {"precision": 0.0, "recall": 0.0}
 
-        query_tokens = set(q.lower().split())
-        relevance_scores = []
+        query_tokens = _tokenize(q)
+        if not query_tokens:
+            return {"precision": 0.0, "recall": 0.0}
+
+        jaccard_scores = []
+        coverage_scores = []
+
         for passage_text, _score, _idx in retrieved:
-            passage_tokens = set(passage_text.lower().split())
+            passage_tokens = _tokenize(passage_text)
             if not passage_tokens:
-                relevance_scores.append(0.0)
+                jaccard_scores.append(0.0)
+                coverage_scores.append(0.0)
                 continue
+
             intersection = query_tokens & passage_tokens
             union = query_tokens | passage_tokens
-            relevance_scores.append(len(intersection) / len(union) if union else 0.0)
+
+            jaccard = len(intersection) / len(union) if union else 0.0
+            coverage = len(intersection) / len(query_tokens)  # recall-oriented
+
+            jaccard_scores.append(jaccard)
+            coverage_scores.append(coverage)
 
         relevance_threshold = 0.05
-        n = len(relevance_scores)
-        precision = sum(1 for s in relevance_scores if s >= relevance_threshold) / n
-        recall = float(np.mean(relevance_scores))
-        return {"precision": round(precision, 4), "recall": round(recall, 4)}
+        n = len(jaccard_scores)
+        precision = sum(1 for s in jaccard_scores if s >= relevance_threshold) / n
+
+        # Recall: blend of best-passage coverage and mean coverage
+        # Best-passage captures if ANY retrieved passage covers the query well;
+        # mean captures overall context richness.
+        best_coverage = max(coverage_scores)
+        mean_coverage = float(np.mean(coverage_scores))
+        recall = round((best_coverage * 0.6 + mean_coverage * 0.4), 4)
+
+        return {"precision": round(precision, 4), "recall": recall}
 
     # -- No API key: compute metrics locally from real retrieval results -------
     if not api_key:

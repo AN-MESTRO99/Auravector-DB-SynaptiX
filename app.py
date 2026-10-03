@@ -6,6 +6,7 @@ import numpy as np
 import umap
 import plotly.express as px
 from datasets import load_dataset
+from groq import Groq
 from backend import (MathematicalVectorEngine, HybridRetrievalPipeline,
                      run_latency_benchmark, run_ragas_eval, compute_local_context_metrics)
 
@@ -52,7 +53,7 @@ st.markdown("""
         font-weight: 500;
     }
 
-    /* Metric Cards (Light Mode) */
+    /* Metric Cards */
     .metric-card {
         background: #FFFFFF;
         border: 1px solid #E2E8F0;
@@ -82,7 +83,7 @@ st.markdown("""
         margin-bottom: 6px;
     }
 
-    /* Passage Result Cards (Light Mode) */
+    /* Passage Result Cards */
     .passage-card {
         background: #FFFFFF;
         border-radius: 12px;
@@ -115,7 +116,7 @@ st.markdown("""
         margin-bottom: 12px;
     }
 
-    /* Sidebar Light Styling */
+    /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #FFFFFF !important;
         border-left: 1px solid #E2E8F0 !important;
@@ -152,14 +153,10 @@ def initialize_system():
     )
 
     sample_passages = []
-    # Note: Processing very large corpora in-memory during startup on Streamlit Cloud 
-    # may cause RAM out-of-memory errors. 1,000 - 5,000 is recommended for instant startup.
     for i, row in enumerate(dataset.take(10000)):
-        # Extract official IDs and text
         official_id = row.get("_id") or row.get("passage_id")
         official_text = row.get("text") or row.get("passage")
 
-        # Skip rows with no text (TF-IDF would crash on None)
         if not official_text:
             continue
         
@@ -175,6 +172,14 @@ def initialize_system():
     return engine, pipeline, svd_dims
 
 engine, pipeline, svd_dims = initialize_system()
+
+# UMAP Cache Function
+@st.cache_data(show_spinner=False)
+def compute_umap_projection(query_vec: np.ndarray, corpus_vecs: np.ndarray):
+    all_vecs = np.vstack([query_vec, corpus_vecs])
+    reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
+    projected = reducer.fit_transform(all_vecs)
+    return projected[0], projected[1:]
 
 # JavaScript execution helper to toggle native Streamlit sidebar
 def trigger_sidebar_toggle():
@@ -257,16 +262,13 @@ with st.sidebar:
     with mutation_tab_delete:
         del_id = st.text_input("Doc ID to Delete", "ms_marco_999", key="delete_id_input")
         if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
-            if hasattr(engine, "delete_passage"):
-                success = engine.delete_passage(del_id)
-                if success:
-                    st.toast(f"Deleted `{del_id}` from corpus!", icon="🗑️")
-                else:
-                    st.error(f"Document `{del_id}` not found in index.")
+            success = engine.delete_passage(del_id)
+            if success:
+                st.toast(f"Deleted `{del_id}` from corpus!", icon="🗑️")
             else:
-                st.error("`delete_passage` method missing from engine backend.")
+                st.error(f"Document `{del_id}` not found in index.")
 
-# Key Performance Indicators (live, query-dependent)
+# KPI Setup
 kpi_query = st.session_state.get("live_query_input", "What is MS MARCO passage ranking?")
 mode_key = "dense" if "Phase 1" in retrieval_mode else "hybrid"
 live = compute_local_context_metrics(pipeline, kpi_query, mode=mode_key, category_filter=category_filter)
@@ -283,7 +285,7 @@ with k4:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Main Navigation Tabs Definition
+# Main Tabs
 tab_search, tab_benchmark, tab_umap = st.tabs([
     "🚀 Retrieval Engine", 
     "⚡ Performance Benchmarks", 
@@ -336,7 +338,26 @@ with tab_search:
                         """,
                         unsafe_allow_html=True
                     )
-            
+
+                # Optional LLM Answer Synthesis using Groq API
+                if groq_key:
+                    st.markdown("---")
+                    st.markdown("##### 🤖 Groq RAG Synthesized Answer")
+                    if st.button("Generate Groq Response"):
+                        try:
+                            client = Groq(api_key=groq_key)
+                            context_str = "\n\n".join([f"[{i+1}] {r[0]}" for i, r in enumerate(results)])
+                            prompt = f"Answer the query based ONLY on these context passages:\n\n{context_str}\n\nQuery: {query}"
+                            
+                            response = client.chat.completions.create(
+                                model="llama-3.3-70b-versatile",
+                                messages=[{"role": "user", "content": prompt}],
+                                temperature=0.0
+                            )
+                            st.info(response.choices[0].message.content)
+                        except Exception as e:
+                            st.error(f"Groq Synthesis Failed: {str(e)}")
+
             with col_info:
                 st.markdown("##### 🛠 Execution Metadata")
                 st.info(f"**Pipeline Mode:**\n\n{retrieval_mode}")
@@ -378,7 +399,7 @@ with tab_benchmark:
                           delta_color="normal" if rec_ok else "inverse")
             st.caption(f"Metric source: {eval_res['source']}")
 
-# Tab 3: UMAP Topology & Nearest Neighbors Analysis
+# Tab 3: UMAP Topology
 with tab_umap:
     st.markdown("##### High-Dimensional Vector Space Topology & Nearest Neighbors")
     st.caption("Maps query embedding proximity relative to corpus vectors via 2D UMAP projection and cosine metric distance.")
@@ -401,22 +422,15 @@ with tab_umap:
         corpus_limit = min(100, len(engine.doc_passages))
         corpus_vecs = engine.doc_vectors[:corpus_limit]
         
-        # 3. Compute Exact Cosine Proximity to Query Vector
+        # 3. Compute Cosine Proximity
         dists = cosine_distances(query_vec, corpus_vecs)[0]
-        sims = (1.0 - dists) * 100.0  # Percentage similarity
-        
-        # Identify Top 5 Nearest Neighbors
+        sims = (1.0 - dists) * 100.0
         nearest_indices = set(np.argsort(dists)[:5])
 
-        # 4. UMAP Dimensionality Reduction
-        all_vecs = np.vstack([query_vec, corpus_vecs])
-        reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
-        projected = reducer.fit_transform(all_vecs)
+        # 4. Cached UMAP Projection
+        q_coords, doc_coords = compute_umap_projection(query_vec, corpus_vecs)
 
-        q_coords = projected[0]
-        doc_coords = projected[1:]
-
-        # 5. Build Structured Plot Data with Smaller Markers
+        # 5. Build Scatter Plot Data
         categories = []
         hover_texts = []
         sizes = []
@@ -435,14 +449,13 @@ with tab_umap:
                 
             hover_texts.append(f"<b>Doc ID:</b> {doc_id}<br><b>Similarity:</b> {sim_score:.2f}%<br><b>Passage:</b> {text_snippet}")
 
-        # Add Query Vector Point
         x_pts = [q_coords[0]] + list(doc_coords[:, 0])
         y_pts = [q_coords[1]] + list(doc_coords[:, 1])
         all_categories = ["Query Vector"] + categories
         all_hovers = [f"<b>Search Query:</b> {active_query}"] + hover_texts
         all_sizes = [14] + sizes
 
-        # 6. Generate Plotly Figure with Blue Color Map
+        # 6. Plotly Figure Generation
         fig = px.scatter(
             x=x_pts,
             y=y_pts,
@@ -450,27 +463,25 @@ with tab_umap:
             size=all_sizes,
             hover_name=all_hovers,
             color_discrete_map={
-                "Query Vector": "#EF4444",        # Red Dot
-                "Nearest Neighbor": "#2563EB",     # Blue Dot
-                "Unselected Corpus": "#CBD5E1"    # Soft Slate Grey
+                "Query Vector": "#EF4444",
+                "Nearest Neighbor": "#2563EB",
+                "Unselected Corpus": "#CBD5E1"
             },
             labels={"x": "UMAP Axis 1", "y": "UMAP Axis 2", "color": "Vector Class"},
             template="plotly_white"
         )
 
-        # Update Query Marker to Red Dot
         fig.update_traces(
             selector=dict(name="Query Vector"),
             marker=dict(symbol="circle", color="#EF4444", line=dict(width=1.5, color="#991B1B"))
         )
 
-        # Update Nearest Neighbors Markers to Blue Dots
         fig.update_traces(
             selector=dict(name="Nearest Neighbor"),
             marker=dict(symbol="circle", color="#2563EB", line=dict(width=1.5, color="#1E40AF"))
         )
 
-        # 7. Draw Visual Blue Connector Lines from Query to Nearest Neighbors
+        # 7. Connector Lines
         for idx in nearest_indices:
             target_x = doc_coords[idx, 0]
             target_y = doc_coords[idx, 1]
@@ -482,7 +493,6 @@ with tab_umap:
                 layer="below"
             )
 
-        # Layout Refinements
         fig.update_layout(
             height=540,
             paper_bgcolor="rgba(0,0,0,0)",

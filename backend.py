@@ -14,7 +14,7 @@ class QdrantVectorEngine:
     """Vector storage and retrieval engine powered by Qdrant."""
     
     def __init__(self, collection_name: str = "ms_marco_collection"):
-        # Initializes Qdrant in-memory database instance
+        # Initializes Qdrant in-memory instance
         # For Qdrant Cloud: QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"))
         self.client = QdrantClient(":memory:")
         self.collection_name = collection_name
@@ -30,7 +30,7 @@ class QdrantVectorEngine:
         self.bm25_engine = None
 
     def _pad_vector(self, vec: np.ndarray) -> np.ndarray:
-        """Pads TF-IDF vectors to exactly 384 spatial dimensions."""
+        """Pads TF-IDF vectors to exactly 384 dimensions."""
         if vec.shape[1] < 384:
             padding = np.zeros((vec.shape[0], 384 - vec.shape[1]))
             return np.hstack([vec, padding])
@@ -81,7 +81,6 @@ class QdrantVectorEngine:
         if embeddings.shape[0] < 2:
             return 1
         
-        # Mean-center vectors to isolate direction variance
         centered = embeddings - np.mean(embeddings, axis=0)
         _, s, _ = svd(centered, full_matrices=False)
         
@@ -92,7 +91,6 @@ class QdrantVectorEngine:
         normalized_variance = s / total_var
         cumulative_variance = np.cumsum(normalized_variance)
         
-        # Minimum dimensions holding 90% cumulative variance
         critical_dims = np.where(cumulative_variance >= 0.90)[0]
         return int(critical_dims[0] + 1) if len(critical_dims) > 0 else len(s)
 
@@ -143,7 +141,7 @@ class HybridRetrievalPipeline:
         query_vec = self.engine.vectorizer.transform([query]).toarray()
         query_vec = self.engine._pad_vector(query_vec)[0].tolist()
 
-        # Query Qdrant Collection using qdrant-client v1.10+ compatible query_points
+        # Query Qdrant Collection via query_points (qdrant-client v1.10+ compatible)
         response = self.engine.client.query_points(
             collection_name=self.engine.collection_name,
             query=query_vec,
@@ -155,7 +153,8 @@ class HybridRetrievalPipeline:
             payload = hit.payload
             if category_filter and payload["category"] != category_filter:
                 continue
-            results.append((payload["text"], float(hit.score), hit.id))
+            # Store integer index hit.id (0..99) as the 3rd tuple element
+            results.append((payload["text"], float(hit.score), int(hit.id)))
             if len(results) == top_k:
                 break
         return results
@@ -170,7 +169,7 @@ class HybridRetrievalPipeline:
         
         results = []
         for idx, score in enumerate(scores):
-            results.append((self.engine.doc_passages[idx], float(score), idx))
+            results.append((self.engine.doc_passages[idx], float(score), int(idx)))
             
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
@@ -194,9 +193,8 @@ class HybridRetrievalPipeline:
                 continue
             rrf_scores[doc_idx] = rrf_scores.get(doc_idx, 0.0) + (1.0 / (k_rrf + rank + 1))
 
-        # Sort combined candidate space by unified RRF score
         fused_results = [
-            (self.engine.doc_passages[idx], score, idx)
+            (self.engine.doc_passages[idx], score, int(idx))
             for idx, score in rrf_scores.items()
         ]
         fused_results.sort(key=lambda x: x[1], reverse=True)

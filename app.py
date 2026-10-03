@@ -1,12 +1,13 @@
 import os
-from datasets import load_dataset
 from dotenv import load_dotenv
 import streamlit as st
 import streamlit.components.v1 as components
 import numpy as np
 import umap
 import plotly.express as px
-from backend import MathematicalVectorEngine, HybridRetrievalPipeline, run_latency_benchmark, run_ragas_eval
+from datasets import load_dataset
+from backend import (MathematicalVectorEngine, HybridRetrievalPipeline,
+                     run_latency_benchmark, run_ragas_eval, compute_local_context_metrics)
 
 # Load environment variables
 load_dotenv()

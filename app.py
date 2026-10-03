@@ -98,11 +98,31 @@ groq_key = st.sidebar.text_input("Groq API Key (Optional for RAGAS)", type="pass
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Live Corpus Mutation (FR-5)")
-new_id = st.sidebar.text_input("Doc ID", "ms_marco_999")
-new_text = st.sidebar.text_area("Passage Text", "MS MARCO Passage #999: SVD dimensional entropy quantization accelerates scalar retrieval.")
-if st.sidebar.button("➕ Upsert Passage", use_container_width=True):
-    engine.upsert_passage(new_id, new_text)
-    st.sidebar.success(f"Upserted document `{new_id}`!")
+
+mutation_tab_upsert, mutation_tab_delete = st.sidebar.tabs(["➕ Upsert", "🗑️ Delete"])
+
+with mutation_tab_upsert:
+    new_id = st.text_input("Doc ID", "ms_marco_999", key="upsert_id_input")
+    new_text = st.text_area(
+        "Passage Text", 
+        "MS MARCO Passage #999: SVD dimensional entropy quantization accelerates scalar retrieval.",
+        key="upsert_text_input"
+    )
+    if st.button("➕ Upsert Passage", use_container_width=True):
+        engine.upsert_passage(new_id, new_text)
+        st.success(f"Upserted document `{new_id}`!")
+
+with mutation_tab_delete:
+    del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
+    if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
+        if hasattr(engine, "delete_passage"):
+            success = engine.delete_passage(del_id)
+            if success:
+                st.success(f"Successfully deleted `{del_id}`!")
+            else:
+                st.error(f"Document `{del_id}` not found in index.")
+        else:
+            st.error("`delete_passage` method missing from engine backend.")
 
 # Navigation Tabs
 tab_search, tab_benchmark, tab_umap = st.tabs(["🚀 Search Interface", "⚡ Performance Benchmarks", "📊 2D Vector Topology"])
@@ -132,7 +152,7 @@ with tab_search:
 
         st.markdown("---")
         if not results:
-            st.warning("No passages found matching the given metadata filter.")
+            st.warning("No passages found matching the given metadata filter or query.")
         else:
             col_res, col_info = st.columns([1.3, 0.7])
             with col_res:
@@ -175,7 +195,7 @@ with tab_umap:
     st.subheader("High-Dimensional Vector Space Topology")
     st.caption("Plots query vector positioning relative to MS MARCO index embeddings via UMAP projection.")
     
-    if query:
+    if query and len(engine.doc_passages) > 0:
         query_vec = engine.vectorizer.transform([query]).toarray()
         if query_vec.shape[1] < 384:
             padding = np.zeros((1, 384 - query_vec.shape[1]))

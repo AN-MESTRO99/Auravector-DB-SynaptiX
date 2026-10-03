@@ -1,8 +1,13 @@
+import os
+from dotenv import load_dotenv
 import streamlit as st
 import numpy as np
 import umap
 import plotly.express as px
 from backend import MathematicalVectorEngine, HybridRetrievalPipeline, run_latency_benchmark, run_ragas_eval
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Page Configuration
 st.set_page_config(
@@ -94,7 +99,16 @@ st.sidebar.markdown("---")
 category_filter = st.sidebar.selectbox("Pre-Retrieval Metadata Filter (FR-4):", [None, "tech", "finance"])
 
 st.sidebar.markdown("---")
-groq_key = st.sidebar.text_input("Groq API Key (Optional for RAGAS)", type="password")
+# Initialize Groq key in session state from .env if not present
+if "groq_api_key" not in st.session_state:
+    st.session_state["groq_api_key"] = os.getenv("GROQ_API_KEY", "")
+
+groq_key = st.sidebar.text_input(
+    "Groq API Key", 
+    type="password",
+    key="groq_api_key",
+    help="Pre-loaded from .env if present. You can edit or override it here."
+)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Live Corpus Mutation (FR-5)")

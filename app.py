@@ -14,7 +14,7 @@ st.set_page_config(
     page_title="AuraVector DB | High-Precision Vector Engine",
     page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Dark Mode UI Styling
@@ -24,6 +24,7 @@ st.markdown("""
         font-family: 'Inter', sans-serif; font-weight: 800; font-size: 2.2rem;
         background: linear-gradient(90deg, #6366F1 0%, #10B981 100%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        margin-bottom: 0px;
     }
     .passage-card {
         background-color: #1E293B; border-radius: 8px; padding: 16px;
@@ -75,9 +76,72 @@ def initialize_system():
 
 engine, pipeline, svd_dims = initialize_system()
 
-# Main Header
+# Header Section
 st.markdown('<div class="title-header">AuraVector DB</div>', unsafe_allow_html=True)
 st.caption("High-Precision Vector Engine for RAG Systems • MS MARCO Benchmark • Team SynaptiX • BIT Mesra")
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Main Page Navigation Tabs with AuraVector DB Content
+tab_search, tab_benchmark, tab_umap = st.tabs([
+    "⚡ AuraVector DB Search", 
+    "📊 Performance Benchmarks", 
+    "🗺️ 2D Vector Topology"
+])
+
+# Collapsible Engine Control Panel
+with st.expander("🎛️ Engine Control Panel", expanded=False):
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1, 1, 1])
+    
+    with ctrl_col1:
+        retrieval_mode = st.radio(
+            "Select Search Mode:",
+            ["Phase 1: Dense Vector Search (Baseline)", "Phase 2: Hybrid RRF Search + Reranker"]
+        )
+        category_filter = st.selectbox(
+            "Pre-Retrieval Metadata Filter (FR-4):", 
+            [None, "tech", "finance"]
+        )
+
+    with ctrl_col2:
+        if "groq_api_key" not in st.session_state:
+            st.session_state["groq_api_key"] = os.getenv("GROQ_API_KEY", "")
+
+        groq_key = st.text_input(
+            "Groq API Key", 
+            type="password",
+            key="groq_api_key",
+            help="Pre-loaded from .env if present. You can edit or override it here."
+        )
+
+    with ctrl_col3:
+        st.subheader("Live Corpus Mutation (FR-5)")
+        mutation_tab_upsert, mutation_tab_delete = st.tabs(["➕ Upsert", "🗑️ Delete"])
+
+        with mutation_tab_upsert:
+            new_id = st.text_input("Doc ID", "ms_marco_999", key="upsert_id_input")
+            new_text = st.text_area(
+                "Passage Text", 
+                "MS MARCO Passage #999: SVD dimensional entropy quantization accelerates scalar retrieval.",
+                key="upsert_text_input"
+            )
+            if st.button("➕ Upsert Passage", use_container_width=True):
+                engine.upsert_passage(new_id, new_text)
+                st.success(f"Upserted document `{new_id}`!")
+
+        with mutation_tab_delete:
+            del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
+            if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
+                if hasattr(engine, "delete_passage"):
+                    success = engine.delete_passage(del_id)
+                    if success:
+                        st.success(f"Successfully deleted `{del_id}`!")
+                    else:
+                        st.error(f"Document `{del_id}` not found in index.")
+                else:
+                    st.error("`delete_passage` method missing from engine backend.")
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 # KPI Scorecard
 k1, k2, k3, k4 = st.columns(4)
@@ -88,59 +152,7 @@ with k4: st.markdown('<div class="metric-container"><div class="metric-label">Co
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Sidebar Controls
-st.sidebar.title("🎛️ Engine Control Panel")
-retrieval_mode = st.sidebar.radio(
-    "Select Search Mode:",
-    ["Phase 1: Dense Vector Search (Baseline)", "Phase 2: Hybrid RRF Search + Reranker"]
-)
-
-st.sidebar.markdown("---")
-category_filter = st.sidebar.selectbox("Pre-Retrieval Metadata Filter (FR-4):", [None, "tech", "finance"])
-
-st.sidebar.markdown("---")
-# Initialize Groq key in session state from .env if not present
-if "groq_api_key" not in st.session_state:
-    st.session_state["groq_api_key"] = os.getenv("GROQ_API_KEY", "")
-
-groq_key = st.sidebar.text_input(
-    "Groq API Key", 
-    type="password",
-    key="groq_api_key",
-    help="Pre-loaded from .env if present. You can edit or override it here."
-)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Live Corpus Mutation (FR-5)")
-
-mutation_tab_upsert, mutation_tab_delete = st.sidebar.tabs(["➕ Upsert", "🗑️ Delete"])
-
-with mutation_tab_upsert:
-    new_id = st.text_input("Doc ID", "ms_marco_999", key="upsert_id_input")
-    new_text = st.text_area(
-        "Passage Text", 
-        "MS MARCO Passage #999: SVD dimensional entropy quantization accelerates scalar retrieval.",
-        key="upsert_text_input"
-    )
-    if st.button("➕ Upsert Passage", use_container_width=True):
-        engine.upsert_passage(new_id, new_text)
-        st.success(f"Upserted document `{new_id}`!")
-
-with mutation_tab_delete:
-    del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
-    if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
-        if hasattr(engine, "delete_passage"):
-            success = engine.delete_passage(del_id)
-            if success:
-                st.success(f"Successfully deleted `{del_id}`!")
-            else:
-                st.error(f"Document `{del_id}` not found in index.")
-        else:
-            st.error("`delete_passage` method missing from engine backend.")
-
-# Navigation Tabs
-tab_search, tab_benchmark, tab_umap = st.tabs(["🚀 Search Interface", "⚡ Performance Benchmarks", "📊 2D Vector Topology"])
-
+# Tab 1: Search Interface
 with tab_search:
     query = st.text_input("Enter MS MARCO Search Query (Press Enter):", value="What is MS MARCO passage ranking?", key="live_query_input")
 
@@ -190,6 +202,7 @@ with tab_search:
                 if category_filter:
                     st.warning(f"**Pre-Filter Applied:** `category == '{category_filter}'`")
 
+# Tab 2: Performance Benchmarks
 with tab_benchmark:
     st.subheader("System Benchmark Suite (NFR-1, NFR-2, NFR-3)")
     st.caption("Executes consecutive queries over MS MARCO index to record latency percentiles.")
@@ -197,7 +210,7 @@ with tab_benchmark:
     if st.button("▶ Run Full System Benchmark Suite", type="primary"):
         with st.spinner("Executing benchmark queries..."):
             p50, p95 = run_latency_benchmark(pipeline)
-            eval_res = run_ragas_eval(pipeline, query, groq_key)
+            eval_res = run_ragas_eval(pipeline, query if 'query' in locals() else "What is MS MARCO passage ranking?", groq_key)
             
             m1, m2, m3, m4 = st.columns(4)
             with m1: st.metric("Median Latency (p50)", f"{p50:.2f} ms")
@@ -205,12 +218,14 @@ with tab_benchmark:
             with m3: st.metric("RAGAS Precision", f"{eval_res['precision']:.4f}", delta="PASSED (>0.75)")
             with m4: st.metric("RAGAS Recall", f"{eval_res['recall']:.4f}", delta="PASSED (>0.70)")
 
+# Tab 3: UMAP Projections
 with tab_umap:
     st.subheader("High-Dimensional Vector Space Topology")
     st.caption("Plots query vector positioning relative to MS MARCO index embeddings via UMAP projection.")
     
-    if query and len(engine.doc_passages) > 0:
-        query_vec = engine.vectorizer.transform([query]).toarray()
+    active_query = query if 'query' in locals() and query else "What is MS MARCO passage ranking?"
+    if len(engine.doc_passages) > 0:
+        query_vec = engine.vectorizer.transform([active_query]).toarray()
         if query_vec.shape[1] < 384:
             padding = np.zeros((1, 384 - query_vec.shape[1]))
             query_vec = np.hstack([query_vec, padding])

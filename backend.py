@@ -5,6 +5,8 @@ from scipy.linalg import svd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from rank_bm25 import BM25Okapi
+import re
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
 
 class MathematicalVectorEngine:
@@ -183,13 +185,57 @@ def run_latency_benchmark(pipeline: HybridRetrievalPipeline, num_queries: int = 
     return p50, p95
 
 
-def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str = None):
-    """Evaluates context quality dynamically with Groq LLM if API key is present."""
+def _content_terms(text: str) -> set:
+    return {t for t in re.findall(r"[a-z0-9]+", text.lower())
+            if t not in ENGLISH_STOP_WORDS and len(t) > 1}
+
+
+def compute_local_context_metrics(pipeline, query, top_k=5, category_filter=None,
+                                  mode="hybrid", cos_threshold=0.15, coverage_threshold=0.5):
+    """
+    Query-dependent proxy metrics (no LLM, no ground-truth labels needed).
+
+    - Precision: rank-aware context precision (RAGAS-style average precision@k).
+      A retrieved passage counts as relevant if its cosine similarity to the query
+      >= cos_threshold, or it covers >= coverage_threshold of the query's content terms.
+    - Recall: fraction of the query's content terms found in the union of the
+      retrieved passages.
+    """
+    if mode == "dense":
+        retrieved = pipeline.dense_search(query, top_k=top_k, category_filter=category_filter)
+    else:
+        retrieved = pipeline.hybrid_rrf_search(query, top_k=top_k, category_filter=category_filter)
+
+    if not retrieved:
+        return {"precision": 0.0, "recall": 0.0, "source": "local proxy"}
+
+    q_terms = _content_terms(query)
+    n_docs = len(pipeline.engine.doc_passages)
+    cos_by_idx = {idx: s for _, s, idx in pipeline.dense_search(query, top_k=n_docs)}
+
+    relevance, covered = [], set()
+    for text, _score, idx in retrieved:
+        p_terms = _content_terms(text)
+        covered |= (q_terms & p_terms)
+        coverage = len(q_terms & p_terms) / len(q_terms) if q_terms else 0.0
+        relevance.append(cos_by_idx.get(idx, 0.0) >= cos_threshold or coverage >= coverage_threshold)
+
+    hits, ap = 0, 0.0
+    for k, is_rel in enumerate(relevance, start=1):
+        if is_rel:
+            hits += 1
+            ap += hits / k
+    precision = ap / hits if hits else 0.0
+    recall = len(covered) / len(q_terms) if q_terms else 0.0
+
+    return {"precision": precision, "recall": recall, "source": "local proxy"}
+
+
+def run_ragas_eval(pipeline, query, api_key=None, category_filter=None, mode="hybrid"):
+    """Uses RAGAS + Groq when a key is given; otherwise (or on failure) uses local metrics."""
+    local = compute_local_context_metrics(pipeline, query, category_filter=category_filter, mode=mode)
     if not api_key:
-        return {
-            "precision": 0.831,
-            "recall": 0.792
-        }
+        return local
 
     try:
         from ragas import evaluate
@@ -197,32 +243,26 @@ def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str =
         from langchain_groq import ChatGroq
         from datasets import Dataset
 
-        eval_llm = ChatGroq(temperature=0, groq_api_key=api_key, model_name="llama-3.1-70b-versatile")
-        
-        retrieved = pipeline.hybrid_rrf_search(query, top_k=5)
+        eval_llm = ChatGroq(temperature=0, groq_api_key=api_key, model_name="llama-3.3-70b-versatile")
+
+        retrieved = pipeline.hybrid_rrf_search(query, top_k=5, category_filter=category_filter)
         contexts = [[item[0] for item in retrieved]]
 
-        data = {
+        # No labeled ground truth exists for free-form queries, so the top-ranked
+        # passage is used as a reference. This is a weak proxy, not a true gold label.
+        dataset = Dataset.from_dict({
             "question": [query],
             "contexts": contexts,
-            "ground_truth": [query]
-        }
-        dataset = Dataset.from_dict(data)
+            "ground_truth": [retrieved[0][0] if retrieved else ""],
+        })
 
-        result = evaluate(
-            dataset=dataset,
-            metrics=[context_precision, context_recall],
-            llm=eval_llm
-        )
-
+        result = evaluate(dataset=dataset, metrics=[context_precision, context_recall], llm=eval_llm)
+        df = result.to_pandas()
         return {
-            "precision": float(result.get("context_precision", 0.831)),
-            "recall": float(result.get("context_recall", 0.792))
+            "precision": float(df["context_precision"].mean()),
+            "recall": float(df["context_recall"].mean()),
+            "source": "RAGAS (Groq)",
         }
-
-    except Exception:
-        # Graceful fallback to baseline metrics if RAGAS evaluation encounters an issue
-        return {
-            "precision": 0.831,
-            "recall": 0.792
-        }
+    except Exception as e:
+        local["source"] = f"local proxy (RAGAS failed: {type(e).__name__})"
+        return local

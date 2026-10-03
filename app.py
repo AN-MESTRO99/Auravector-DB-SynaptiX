@@ -10,55 +10,40 @@ from backend import MathematicalVectorEngine, HybridRetrievalPipeline, run_laten
 # Load environment variables
 load_dotenv()
 
-# Initialize sidebar state session key
-if "sidebar_expanded" not in st.session_state:
-    st.session_state["sidebar_expanded"] = False
-
-# Page Configuration dynamically tied to session state
+# Page Configuration - Start collapsed by default
 st.set_page_config(
     page_title="AuraVector DB | High-Precision Vector Engine",
     page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="expanded" if st.session_state["sidebar_expanded"] else "collapsed"
+    initial_sidebar_state="collapsed"
 )
 
 # Light Theme & Header CSS Fixes
 st.markdown("""
 <style>
-    /* Adjust container top padding to prevent title clipping */
+    /* Prevent title clipping by setting container padding */
     .block-container {
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
         max-width: 1250px;
     }
 
-    /* Hide standard sidebar collapse chevron when user wants clean header-only control */
-    [data-testid="stSidebarNav"] {
-        padding-top: 10px;
+    /* Hide standard top left sidebar expand/collapse chevron arrow entirely */
+    [data-testid="stSidebarCollapseButton"], 
+    button[data-testid="baseButton-headerNoPadding"] {
+        display: none !important;
     }
 
-    /* Custom Header Bar Container */
-    .app-header-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: #FFFFFF;
-        padding: 20px 28px;
-        border-radius: 12px;
-        border: 1px solid #E2E8F0;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-    }
-
+    /* Custom Header Bar Styling */
     .app-title {
         font-weight: 800;
-        font-size: 2rem;
+        font-size: 2.1rem;
         line-height: 1.2;
         background: linear-gradient(90deg, #4F46E5 0%, #059669 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 0;
-        padding-top: 4px;
+        padding-top: 2px;
         letter-spacing: -0.5px;
     }
     .app-subtitle {
@@ -98,7 +83,7 @@ st.markdown("""
         margin-bottom: 6px;
     }
 
-    /* Search Passage Cards */
+    /* Passage Result Cards */
     .passage-card {
         background: #FFFFFF;
         border-radius: 10px;
@@ -188,7 +173,7 @@ head_col1, head_col2 = st.columns([3.2, 1])
 
 with head_col1:
     st.markdown("""
-        <div style="padding-top: 5px;">
+        <div>
             <div class="app-title">⚡ AuraVector DB</div>
             <div class="app-subtitle">High-Precision Vector Engine for RAG Systems • Team SynaptiX • BIT Mesra</div>
         </div>
@@ -196,34 +181,54 @@ with head_col1:
 
 with head_col2:
     st.write("") # Alignment spacer
-    # Clicking this button directly toggles the native sidebar state
+    # Clicking "Control Panel" directly opens/expands the sidebar drawer
     if st.button("🎛️ Control Panel", type="primary", use_container_width=True):
-        st.session_state["sidebar_expanded"] = not st.session_state["sidebar_expanded"]
-        # Injects JS to open/close Streamlit's native sidebar panel directly
         components.html(
             """
             <script>
-                const sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
-                const button = window.parent.document.querySelector('button[data-testid="baseButton-headerNoPadding"]');
-                if (button) {
-                    button.click();
+                const parentDoc = window.parent.document;
+                const sidebar = parentDoc.querySelector('section[data-testid="stSidebar"]');
+                const isCollapsed = sidebar ? sidebar.getAttribute('aria-expanded') === 'false' : true;
+                
+                if (isCollapsed) {
+                    // Query native expand controls and trigger click
+                    const expandButton = parentDoc.querySelector('button[data-testid="stSidebarCollapseButton"]') 
+                                      || parentDoc.querySelector('button[aria-label="Expand sidebar"]')
+                                      || parentDoc.querySelector('[data-testid="baseButton-headerNoPadding"]');
+                    if (expandButton) {
+                        expandButton.click();
+                    }
                 }
             </script>
             """,
             height=0,
+            width=0
         )
-        st.rerun()
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Sidebar Native Drawer Controls
+# Native Sidebar Control Panel Drawer
 with st.sidebar:
     st.subheader("🎛️ Engine Control Panel")
     st.caption("Configure retrieval algorithms, metadata filters, and corpus mutations.")
     
+    # Close button directly triggers sidebar collapse via JS
     if st.button("❌ Close Control Panel", use_container_width=True):
-        st.session_state["sidebar_expanded"] = False
-        st.rerun()
+        components.html(
+            """
+            <script>
+                const parentDoc = window.parent.document;
+                const collapseButton = parentDoc.querySelector('button[data-testid="stSidebarCollapseButton"]') 
+                                       || parentDoc.querySelector('button[aria-label="Close sidebar"]')
+                                       || parentDoc.querySelector('[data-testid="baseButton-headerNoPadding"]');
+                if (collapseButton) {
+                    collapseButton.click();
+                }
+            </script>
+            """,
+            height=0,
+            width=0
+        )
 
     st.markdown("---")
     

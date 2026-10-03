@@ -154,7 +154,7 @@ def initialize_system():
     sample_passages = []
     # Note: Processing very large corpora in-memory during startup on Streamlit Cloud 
     # may cause RAM out-of-memory errors. 1,000 - 5,000 is recommended for instant startup.
-    for i, row in enumerate(dataset.take(100000)):
+    for i, row in enumerate(dataset.take(10000)):
         # Extract official IDs and text
         official_id = row.get("_id") or row.get("passage_id")
         official_text = row.get("text") or row.get("passage")

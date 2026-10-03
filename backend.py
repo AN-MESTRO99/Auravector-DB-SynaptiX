@@ -1,12 +1,12 @@
 import time
 import os
+import re
 import numpy as np
 from scipy.linalg import svd
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 from sklearn.metrics.pairwise import cosine_similarity
 from rank_bm25 import BM25Okapi
-import re
-from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+from sentence_transformers import CrossEncoder
 
 
 class MathematicalVectorEngine:
@@ -24,6 +24,14 @@ class MathematicalVectorEngine:
 
     def ingest_and_index(self, passage_dicts):
         """Indexes passages using TF-IDF spatial vectors and BM25 lexicals."""
+        if not passage_dicts:
+            self.doc_passages = []
+            self.doc_categories = []
+            self.doc_ids = []
+            self.doc_vectors = np.empty((0, 384))
+            self.bm25_engine = None
+            return 1
+
         self.doc_passages = [p["text"] for p in passage_dicts]
         self.doc_categories = [p.get("category", "tech") for p in passage_dicts]
         self.doc_ids = [p.get("id", f"doc_{i}") for i, p in enumerate(passage_dicts)]
@@ -85,19 +93,15 @@ class MathematicalVectorEngine:
             if self.doc_ids[i] != doc_id
         ]
         
-        if len(remaining_dicts) > 0:
-            self.ingest_and_index(remaining_dicts)
-        else:
-            self.doc_passages = []
-            self.doc_categories = []
-            self.doc_ids = []
-            self.doc_vectors = np.empty((0, 384))
+        self.ingest_and_index(remaining_dicts)
         return True
 
 
 class HybridRetrievalPipeline:
     def __init__(self, engine: MathematicalVectorEngine):
         self.engine = engine
+        # Fast Cross-Encoder for Phase 2 candidate reranking
+        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
     def dense_search(self, query: str, top_k: int = 5, category_filter: str = None):
         """Phase 1: Dense Vector Similarity Search (Cosine)."""
@@ -124,7 +128,7 @@ class HybridRetrievalPipeline:
 
     def sparse_search(self, query: str, top_k: int = 15):
         """BM25 Lexical Keyword Search."""
-        if len(self.engine.doc_passages) == 0:
+        if len(self.engine.doc_passages) == 0 or self.engine.bm25_engine is None:
             return []
 
         tokenized_query = query.lower().split()
@@ -137,8 +141,8 @@ class HybridRetrievalPipeline:
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
 
-    def hybrid_rrf_search(self, query: str, top_k: int = 5, category_filter: str = None, k_rrf: int = 60):
-        """Phase 2: Reciprocal Rank Fusion (Dense + Sparse BM25) + Reranking."""
+    def hybrid_rrf_search(self, query: str, top_k: int = 5, category_filter: str = None, k_rrf: int = 60, use_reranker: bool = True):
+        """Phase 2: Reciprocal Rank Fusion (Dense + Sparse BM25) + Cross-Encoder Reranking."""
         dense_res = self.dense_search(query, top_k=30, category_filter=category_filter)
         sparse_res = self.sparse_search(query, top_k=30)
         
@@ -156,13 +160,28 @@ class HybridRetrievalPipeline:
                 continue
             rrf_scores[doc_idx] = rrf_scores.get(doc_idx, 0.0) + (1.0 / (k_rrf + rank + 1))
 
-        # Sort combined candidate space by unified RRF score
-        fused_results = [
+        # Sort combined candidates by RRF score
+        candidate_results = [
             (self.engine.doc_passages[idx], score, idx)
             for idx, score in rrf_scores.items()
         ]
-        fused_results.sort(key=lambda x: x[1], reverse=True)
-        return fused_results[:top_k]
+        candidate_results.sort(key=lambda x: x[1], reverse=True)
+        top_candidates = candidate_results[:20]
+
+        # Cross-Encoder Reranking
+        if use_reranker and top_candidates:
+            pairs = [[query, doc[0]] for doc in top_candidates]
+            rerank_scores = self.reranker.predict(pairs)
+            
+            reranked_results = []
+            for i, score in enumerate(rerank_scores):
+                passage, _, idx = top_candidates[i]
+                reranked_results.append((passage, float(score), idx))
+                
+            reranked_results.sort(key=lambda x: x[1], reverse=True)
+            return reranked_results[:top_k]
+
+        return top_candidates[:top_k]
 
 
 def run_latency_benchmark(pipeline: HybridRetrievalPipeline, num_queries: int = 20):
@@ -194,12 +213,6 @@ def compute_local_context_metrics(pipeline, query, top_k=5, category_filter=None
                                   mode="hybrid", cos_threshold=0.15, coverage_threshold=0.5):
     """
     Query-dependent proxy metrics (no LLM, no ground-truth labels needed).
-
-    - Precision: rank-aware context precision (RAGAS-style average precision@k).
-      A retrieved passage counts as relevant if its cosine similarity to the query
-      >= cos_threshold, or it covers >= coverage_threshold of the query's content terms.
-    - Recall: fraction of the query's content terms found in the union of the
-      retrieved passages.
     """
     if mode == "dense":
         retrieved = pipeline.dense_search(query, top_k=top_k, category_filter=category_filter)
@@ -232,7 +245,7 @@ def compute_local_context_metrics(pipeline, query, top_k=5, category_filter=None
 
 
 def run_ragas_eval(pipeline, query, api_key=None, category_filter=None, mode="hybrid"):
-    """Uses RAGAS + Groq when a key is given; otherwise (or on failure) uses local metrics."""
+    """Uses RAGAS + Groq when a key is given; otherwise uses local metrics."""
     local = compute_local_context_metrics(pipeline, query, category_filter=category_filter, mode=mode)
     if not api_key:
         return local
@@ -248,8 +261,6 @@ def run_ragas_eval(pipeline, query, api_key=None, category_filter=None, mode="hy
         retrieved = pipeline.hybrid_rrf_search(query, top_k=5, category_filter=category_filter)
         contexts = [[item[0] for item in retrieved]]
 
-        # No labeled ground truth exists for free-form queries, so the top-ranked
-        # passage is used as a reference. This is a weak proxy, not a true gold label.
         dataset = Dataset.from_dict({
             "question": [query],
             "contexts": contexts,

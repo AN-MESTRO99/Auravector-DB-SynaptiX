@@ -329,7 +329,7 @@ with tab_search:
                     )
             
             with col_info:
-                st.markdown("##### 🛠️️ Execution Metadata")
+                st.markdown("##### 🛠 Execution Metadata")
                 st.info(f"**Pipeline Mode:**\n\n{retrieval_mode}")
                 st.success(f"**SVD Entropy Concentration:**\n\n90% Entropy concentrated in top **{local_svd_dims} / 384** dimensions across candidate pool.")
                 if category_filter:
@@ -416,7 +416,7 @@ with tab_umap:
         all_hovers = [f"<b>Search Query:</b> {active_query}"] + hover_texts
         all_sizes = [22] + sizes
 
-        # 6. Generate Lively Plotly Figure
+        # 6. Generate Plotly Figure
         fig = px.scatter(
             x=x_pts,
             y=y_pts,
@@ -424,7 +424,7 @@ with tab_umap:
             size=all_sizes,
             hover_name=all_hovers,
             color_discrete_map={
-                "Query Vector": "#EF4444",        # Vibrant Red
+                "Query Vector": "#EF4444",        # Vibrant Red Dot
                 "Nearest Neighbor": "#059669",     # Glowing Emerald
                 "Unselected Corpus": "#CBD5E1"    # Soft Slate Grey
             },
@@ -432,16 +432,16 @@ with tab_umap:
             template="plotly_white"
         )
 
-        # Update Query Marker to a Star Shape
+        # Update Query Marker to Red Dot (Circle)
         fig.update_traces(
             selector=dict(name="Query Vector"),
-            marker=dict(symbol="star", line=dict(width=2, color="#B91C1C"))
+            marker=dict(symbol="circle", color="#EF4444", line=dict(width=2, color="#991B1B"))
         )
 
         # Update Nearest Neighbors Markers
         fig.update_traces(
             selector=dict(name="Nearest Neighbor"),
-            marker=dict(symbol="circle", line=dict(width=2, color="#047857"))
+            marker=dict(symbol="circle", color="#059669", line=dict(width=2, color="#047857"))
         )
 
         # 7. Draw Visual Connector Lines from Query to Nearest Neighbors

@@ -62,15 +62,34 @@ class MathematicalVectorEngine:
         return int(critical_dims[0] + 1) if len(critical_dims) > 0 else len(s)
 
     def upsert_passage(self, doc_id: str, text: str, category: str = "tech"):
-        """Live mutation helper (FR-5) to append a passage to the index."""
-        new_dict = {"id": doc_id, "text": text, "category": category}
-        # Re-index full corpus with newly appended text
+        """Live mutation helper (FR-5) to append or update a passage in the index."""
         all_dicts = [
             {"id": self.doc_ids[i], "text": self.doc_passages[i], "category": self.doc_categories[i]}
             for i in range(len(self.doc_passages))
+            if self.doc_ids[i] != doc_id  # Replace if ID exists
         ]
-        all_dicts.append(new_dict)
+        all_dicts.append({"id": doc_id, "text": text, "category": category})
         self.ingest_and_index(all_dicts)
+
+    def delete_passage(self, doc_id: str) -> bool:
+        """Deletes a passage by ID and re-indexes the remaining corpus."""
+        if doc_id not in self.doc_ids:
+            return False
+
+        remaining_dicts = [
+            {"id": self.doc_ids[i], "text": self.doc_passages[i], "category": self.doc_categories[i]}
+            for i in range(len(self.doc_passages))
+            if self.doc_ids[i] != doc_id
+        ]
+        
+        if len(remaining_dicts) > 0:
+            self.ingest_and_index(remaining_dicts)
+        else:
+            self.doc_passages = []
+            self.doc_categories = []
+            self.doc_ids = []
+            self.doc_vectors = np.empty((0, 384))
+        return True
 
 
 class HybridRetrievalPipeline:
@@ -79,6 +98,9 @@ class HybridRetrievalPipeline:
 
     def dense_search(self, query: str, top_k: int = 5, category_filter: str = None):
         """Phase 1: Dense Vector Similarity Search (Cosine)."""
+        if len(self.engine.doc_passages) == 0:
+            return []
+
         query_vec = self.engine.vectorizer.transform([query]).toarray()
         if query_vec.shape[1] < 384:
             padding = np.zeros((1, 384 - query_vec.shape[1]))
@@ -99,6 +121,9 @@ class HybridRetrievalPipeline:
 
     def sparse_search(self, query: str, top_k: int = 15):
         """BM25 Lexical Keyword Search."""
+        if len(self.engine.doc_passages) == 0:
+            return []
+
         tokenized_query = query.lower().split()
         scores = self.engine.bm25_engine.get_scores(tokenized_query)
         

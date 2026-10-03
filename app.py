@@ -156,13 +156,16 @@ def initialize_system():
     ]
     
     sample_passages = []
-    for i in range(100):
-        domain_text = base_domains[i % len(base_domains)]
-        sample_passages.append({
-            "id": f"ms_marco_{i}",
-            "text": f"MS MARCO Passage #{i}: [Specifier-{i}] {domain_text} Contextual marker {i*37 % 100}.",
-            "category": "tech" if i % 2 == 0 else "finance"
-        })
+for i, row in enumerate(dataset.take(100000)):
+    # The Hugging Face repo uses either '_id' or 'passage_id' depending on the exact version
+    official_id = row.get("_id") or row.get("passage_id")
+    official_text = row.get("text") or row.get("passage")
+    
+    sample_passages.append({
+        "id": str(official_id), 
+        "text": official_text,
+        "category": "tech" if i % 2 == 0 else "finance" # Preserving your pre-retrieval metadata filter
+    })
 
     engine = MathematicalVectorEngine()
     svd_dims = engine.ingest_and_index(sample_passages)

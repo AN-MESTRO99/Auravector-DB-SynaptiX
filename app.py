@@ -262,16 +262,20 @@ with st.sidebar:
             else:
                 st.error("`delete_passage` method missing from engine backend.")
 
-# Key Performance Indicators
+# Key Performance Indicators (live, query-dependent)
+kpi_query = st.session_state.get("live_query_input", "What is MS MARCO passage ranking?")
+mode_key = "dense" if "Phase 1" in retrieval_mode else "hybrid"
+live = compute_local_context_metrics(pipeline, kpi_query, mode=mode_key, category_filter=category_filter)
+
 k1, k2, k3, k4 = st.columns(4)
-with k1: 
-    st.markdown('<div class="metric-card"><div class="metric-label">Index Scale</div><div class="metric-value">100,000+</div></div>', unsafe_allow_html=True)
-with k2: 
-    st.markdown('<div class="metric-card"><div class="metric-label">Target p95 Latency</div><div class="metric-value">< 300 ms</div></div>', unsafe_allow_html=True)
-with k3: 
-    st.markdown('<div class="metric-card"><div class="metric-label">Context Precision</div><div class="metric-value">0.831</div></div>', unsafe_allow_html=True)
-with k4: 
-    st.markdown('<div class="metric-card"><div class="metric-label">Context Recall</div><div class="metric-value">0.792</div></div>', unsafe_allow_html=True)
+with k1:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Indexed Passages</div><div class="metric-value">{len(engine.doc_passages):,}</div></div>', unsafe_allow_html=True)
+with k2:
+    st.markdown('<div class="metric-card"><div class="metric-label">Target p95 Latency</div><div class="metric-value">&lt; 300 ms</div></div>', unsafe_allow_html=True)
+with k3:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Context Precision</div><div class="metric-value">{live["precision"]:.3f}</div></div>', unsafe_allow_html=True)
+with k4:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Context Recall</div><div class="metric-value">{live["recall"]:.3f}</div></div>', unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -342,16 +346,33 @@ with tab_benchmark:
     st.caption("Executes automated query sequences to record latency percentiles and RAGAS metric scores.")
     
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("▶ Run Full System Benchmark Suite", type="primary"):
+        if st.button("▶ Run Full System Benchmark Suite", type="primary"):
         with st.spinner("Executing benchmarks..."):
+            bench_query = query if query else "What is MS MARCO passage ranking?"
             p50, p95 = run_latency_benchmark(pipeline)
-            eval_res = run_ragas_eval(pipeline, query if 'query' in locals() else "What is MS MARCO passage ranking?", groq_key)
-            
+            eval_res = run_ragas_eval(pipeline, bench_query, groq_key,
+                                      category_filter=category_filter, mode=mode_key)
+
+            lat_ok = p95 < 300
+            prec_ok = eval_res["precision"] > 0.75
+            rec_ok = eval_res["recall"] > 0.70
+
             m1, m2, m3, m4 = st.columns(4)
-            with m1: st.metric("Median Latency (p50)", f"{p50:.2f} ms")
-            with m2: st.metric("Target Latency (p95)", f"{p95:.2f} ms", delta="PASSED (<300ms)")
-            with m3: st.metric("RAGAS Precision", f"{eval_res['precision']:.4f}", delta="PASSED (>0.75)")
-            with m4: st.metric("RAGAS Recall", f"{eval_res['recall']:.4f}", delta="PASSED (>0.70)")
+            with m1:
+                st.metric("Median Latency (p50)", f"{p50:.2f} ms")
+            with m2:
+                st.metric("Tail Latency (p95)", f"{p95:.2f} ms",
+                          delta="PASSED (<300ms)" if lat_ok else "FAILED (>=300ms)",
+                          delta_color="normal" if lat_ok else "inverse")
+            with m3:
+                st.metric("Context Precision", f"{eval_res['precision']:.4f}",
+                          delta="PASSED (>0.75)" if prec_ok else "BELOW TARGET (0.75)",
+                          delta_color="normal" if prec_ok else "inverse")
+            with m4:
+                st.metric("Context Recall", f"{eval_res['recall']:.4f}",
+                          delta="PASSED (>0.70)" if rec_ok else "BELOW TARGET (0.70)",
+                          delta_color="normal" if rec_ok else "inverse")
+            st.caption(f"Metric source: {eval_res['source']}")
 
 # Tab 3: UMAP Topology & Nearest Neighbors Analysis
 with tab_umap:

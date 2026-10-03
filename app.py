@@ -18,13 +18,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Lively Glassmorphism & Neon UI Styling
+# Lively Light Theme Styling
 st.markdown("""
 <style>
-    /* Background & Container Adjustments */
+    /* Background & Main Container */
     .stApp {
-        background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #0F172A 100%);
-        color: #F8FAFC;
+        background-color: #F8FAFC;
+        color: #0F172A;
     }
     .block-container {
         padding-top: 2rem !important;
@@ -32,83 +32,79 @@ st.markdown("""
         max-width: 1250px;
     }
 
-    /* Vibrant Gradient Title */
+    /* Vibrant Title Bar */
     .app-title {
         font-weight: 900;
         font-size: 2.3rem;
         line-height: 1.2;
-        background: linear-gradient(90deg, #A855F7 0%, #3B82F6 50%, #10B981 100%);
+        background: linear-gradient(90deg, #4F46E5 0%, #0284C7 50%, #059669 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 0;
         letter-spacing: -0.5px;
     }
     .app-subtitle {
-        color: #94A3B8;
+        color: #64748B;
         font-size: 0.88rem;
         margin-top: 4px;
         font-weight: 500;
     }
 
-    /* Glassmorphism Metric Cards */
+    /* Metric Cards (Light Mode) */
     .metric-card {
-        background: rgba(30, 41, 59, 0.7);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(12px);
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
         border-radius: 16px;
         padding: 18px;
         text-align: center;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .metric-card:hover {
-        border-color: #8B5CF6;
-        transform: translateY(-4px);
-        box-shadow: 0 12px 24px -10px rgba(139, 92, 246, 0.5);
+        border-color: #6366F1;
+        transform: translateY(-3px);
+        box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.15);
     }
     .metric-value {
         font-size: 1.8rem;
         font-weight: 800;
-        background: linear-gradient(90deg, #34D399 0%, #60A5FA 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #059669;
         letter-spacing: -0.5px;
     }
     .metric-label {
         font-size: 0.72rem;
-        color: #CBD5E1;
+        color: #64748B;
         text-transform: uppercase;
         letter-spacing: 1px;
         font-weight: 700;
         margin-bottom: 6px;
     }
 
-    /* Lively Passage Result Cards */
+    /* Passage Result Cards (Light Mode) */
     .passage-card {
-        background: rgba(30, 41, 59, 0.6);
+        background: #FFFFFF;
         border-radius: 12px;
         padding: 20px;
-        border-left: 5px solid #8B5CF6;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-        border-right: 1px solid rgba(255, 255, 255, 0.08);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        border-left: 5px solid #4F46E5;
+        border-top: 1px solid #E2E8F0;
+        border-right: 1px solid #E2E8F0;
+        border-bottom: 1px solid #E2E8F0;
         margin-bottom: 16px;
-        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
         transition: all 0.25s ease-in-out;
     }
     .passage-card:hover {
         transform: translateX(4px);
-        background: rgba(30, 41, 59, 0.85);
-        box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.08);
     }
     .passage-card-hybrid { 
-        border-left-color: #10B981; 
+        border-left-color: #059669; 
     }
     
     .score-badge {
-        background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
-        color: #38BDF8;
-        border: 1px solid rgba(56, 189, 248, 0.3);
+        background-color: #EFF6FF;
+        color: #0284C7;
+        border: 1px solid #BAE6FD;
         font-size: 0.75rem;
         font-weight: 700;
         padding: 4px 14px;
@@ -117,28 +113,28 @@ st.markdown("""
         margin-bottom: 12px;
     }
 
-    /* Sidebar Styling */
+    /* Sidebar Light Styling */
     [data-testid="stSidebar"] {
-        background-color: #0F172A !important;
-        border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+        background-color: #FFFFFF !important;
+        border-left: 1px solid #E2E8F0 !important;
     }
 
-    /* Custom Input Styling */
+    /* Custom Input Controls */
     .stTextInput input, .stTextArea textarea, .stSelectbox > div {
-        background-color: rgba(15, 23, 42, 0.8) !important;
-        color: #F8FAFC !important;
-        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid #CBD5E1 !important;
         border-radius: 10px !important;
     }
 
     /* Custom Tabs Styling */
     button[data-baseweb="tab"] {
-        color: #94A3B8 !important;
+        color: #64748B !important;
         font-weight: 600 !important;
     }
     button[aria-selected="true"] {
-        color: #38BDF8 !important;
-        border-bottom-color: #38BDF8 !important;
+        color: #4F46E5 !important;
+        border-bottom-color: #4F46E5 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -326,7 +322,7 @@ with tab_search:
                         f"""
                         <div class="{card_class}">
                             <div class="score-badge">Rank #{idx+1} • Score: {score:.4f}</div>
-                            <div style="color: #E2E8F0; font-size: 0.95rem; line-height: 1.5;">{text}</div>
+                            <div style="color: #334155; font-size: 0.95rem; line-height: 1.5;">{text}</div>
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -383,8 +379,8 @@ with tab_umap:
         fig = px.scatter(
             x=projected[:, 0], y=projected[:, 1],
             color=colors, hover_name=labels,
-            color_discrete_map={"Query Vector": "#EF4444", "Top Candidates": "#10B981", "Unselected Corpus": "#64748B"},
-            template="plotly_dark"
+            color_discrete_map={"Query Vector": "#EF4444", "Top Candidates": "#059669", "Unselected Corpus": "#94A3B8"},
+            template="plotly_white"
         )
         fig.update_layout(
             height=500, 

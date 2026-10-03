@@ -1,4 +1,5 @@
 import os
+from datasets import load_dataset
 from dotenv import load_dotenv
 import streamlit as st
 import streamlit.components.v1 as components
@@ -141,30 +142,26 @@ st.markdown("""
 
 @st.cache_resource
 def initialize_system():
-    """Generates 100 unique MS MARCO topic passages and initializes index."""
-    base_domains = [
-        "Singular Value Decomposition (SVD) isolates principal variance across latent dimensions.",
-        "BM25 keyword search calculates term frequency and inverse document frequency saturation.",
-        "Reciprocal Rank Fusion (RRF) unifies sparse keyword search and dense similarity scores.",
-        "Cross-Encoder attention reranking rescores candidate passages to eliminate hallucinations.",
-        "Pre-retrieval metadata filtering executes structural constraints at the payload level.",
-        "Dense vector embeddings compress text into spatial vector representations via bi-encoders.",
-        "High-precision vector engines enforce sub-300ms p95 latency constraints on consumer hardware.",
-        "Context precision and context recall metrics evaluate factual accuracy in enterprise RAG.",
-        "Scalar quantization INT8 aligns embedding representations with CPU SIMD registers.",
-        "Topological UMAP projections map high-dimensional vector spaces into 2D scatter clusters."
-    ]
-    
+    # 1. Initialize the streamed dataset (fixes NameError)
+    dataset = load_dataset(
+        "sentence-transformers/msmarco", 
+        "corpus", 
+        split="train", 
+        streaming=True
+    )
+
     sample_passages = []
-    for i, row in enumerate(dataset.take(100000)):
-        # The Hugging Face repo uses either '_id' or 'passage_id' depending on the exact version
+    # Note: Processing 100,000 passages in-memory during startup on Streamlit Cloud 
+    # may cause RAM out-of-memory errors. 1,000 - 5,000 is recommended for instant startup.
+    for i, row in enumerate(dataset.take(1000)):
+        # Extract official IDs and text
         official_id = row.get("_id") or row.get("passage_id")
         official_text = row.get("text") or row.get("passage")
         
         sample_passages.append({
-            "id": str(official_id), 
+            "id": str(official_id),
             "text": official_text,
-            "category": "tech" if i % 2 == 0 else "finance" # Preserving your pre-retrieval metadata filter
+            "category": "tech" if i % 2 == 0 else "finance"
         })
 
     engine = MathematicalVectorEngine()

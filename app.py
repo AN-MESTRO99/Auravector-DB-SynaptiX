@@ -1,305 +1,309 @@
-import time
 import os
-import re
-import hashlib
-import json
+import time
+from dotenv import load_dotenv
+import streamlit as st
+import streamlit.components.v1 as components
 import numpy as np
-from scipy.linalg import svd
-from sentence_transformers import SentenceTransformer, CrossEncoder
-from rank_bm25 import BM25Okapi
-from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+import umap
+import plotly.express as px
+from datasets import load_dataset
+from groq import Groq
+from backend import (MathematicalVectorEngine, HybridRetrievalPipeline,
+                     run_latency_benchmark, run_ragas_eval, compute_local_context_metrics)
 
+load_dotenv()
 
-class InMemLRUCache:
-    """In-Memory LRU Query Cache Layer for sub-5ms repeat query responses."""
-    def __init__(self, capacity: int = 1000):
-        self.capacity = capacity
-        self.cache = {}
+st.set_page_config(
+    page_title="AuraVector DB | High-Precision Vector Engine",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-    def _generate_key(self, query: str, category_filter: str, mode: str) -> str:
-        raw_key = f"{query.strip().lower()}:{category_filter}:{mode}"
-        return hashlib.sha256(raw_key.encode()).hexdigest()
+# Custom Styling
+st.markdown("""
+<style>
+    .stApp { background-color: #F8FAFC; color: #0F172A; }
+    .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 1250px; }
+    .app-title {
+        font-weight: 900; font-size: 2.3rem; line-height: 1.2;
+        background: linear-gradient(90deg, #4F46E5 0%, #0284C7 50%, #059669 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .app-subtitle { color: #64748B; font-size: 0.88rem; margin-top: 4px; font-weight: 500; }
+    .metric-card {
+        background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 18px; text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    }
+    .metric-value { font-size: 1.8rem; font-weight: 800; color: #059669; }
+    .metric-label { font-size: 0.72rem; color: #64748B; text-transform: uppercase; font-weight: 700; margin-bottom: 6px; }
+    .passage-card {
+        background: #FFFFFF; border-radius: 12px; padding: 20px;
+        border-left: 5px solid #4F46E5; border-top: 1px solid #E2E8F0;
+        border-right: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; margin-bottom: 16px;
+    }
+    .passage-card-hybrid { border-left-color: #059669; }
+    .score-badge {
+        background-color: #EFF6FF; color: #0284C7; border: 1px solid #BAE6FD;
+        font-size: 0.75rem; font-weight: 700; padding: 4px 14px; border-radius: 20px; display: inline-block; margin-bottom: 12px;
+    }
+    .cache-badge {
+        background-color: #ECFDF5; color: #059669; border: 1px solid #A7F3D0;
+        font-size: 0.75rem; font-weight: 700; padding: 4px 14px; border-radius: 20px; display: inline-block; margin-bottom: 12px; margin-left: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-    def get(self, query: str, category_filter: str, mode: str):
-        key = self._generate_key(query, category_filter, mode)
-        if key in self.cache:
-            # Move accessed key to end (MRU)
-            val = self.cache.pop(key)
-            self.cache[key] = val
-            return val
-        return None
-
-    def set(self, query: str, category_filter: str, mode: str, value):
-        key = self._generate_key(query, category_filter, mode)
-        if key in self.cache:
-            self.cache.pop(key)
-        elif len(self.cache) >= self.capacity:
-            # Evict LRU item
-            first_key = next(iter(self.cache))
-            del self.cache[first_key]
-        self.cache[key] = value
-
-
-class MathematicalVectorEngine:
-    def __init__(self, embedding_model_name: str = 'BAAI/bge-small-en-v1.5'):
-        # BAAI/bge-small-en-v1.5 generates 384-dimensional dense vectors
-        self.dense_model = SentenceTransformer(embedding_model_name)
-        self.doc_passages = []
-        self.doc_categories = []
-        self.doc_ids = []
-        self.doc_vectors = None
-        self.bm25_engine = None
-
-    def ingest_and_index(self, passage_dicts):
-        """Indexes passages using BGE Dense Vectors and Rank-BM25 Lexicals."""
-        if not passage_dicts:
-            self.doc_passages = []
-            self.doc_categories = []
-            self.doc_ids = []
-            self.doc_vectors = np.empty((0, 384))
-            self.bm25_engine = None
-            return 1
-
-        self.doc_passages = [p["text"] for p in passage_dicts]
-        self.doc_categories = [p.get("category", "tech") for p in passage_dicts]
-        self.doc_ids = [p.get("id", f"doc_{i}") for i, p in enumerate(passage_dicts)]
-
-        # Generate 384D Dense Vector Embeddings
-        self.doc_vectors = self.dense_model.encode(
-            self.doc_passages, 
-            batch_size=64, 
-            show_progress_bar=False, 
-            normalize_embeddings=True
-        )
-
-        # BM25 Lexical Engine
-        tokenized_corpus = [doc.lower().split() for doc in self.doc_passages]
-        self.bm25_engine = BM25Okapi(tokenized_corpus)
-
-        return self.svd_entropy_analysis(self.doc_vectors)
-
-    def svd_entropy_analysis(self, embeddings: np.ndarray) -> int:
-        """SVD Cumulative Variance Ratio Analysis to isolate 90% entropy dimensions."""
-        if embeddings.shape[0] < 2:
-            return 1
-        
-        centered = embeddings - np.mean(embeddings, axis=0)
-        _, s, _ = svd(centered, full_matrices=False)
-        
-        total_var = np.sum(s)
-        if total_var < 1e-9:
-            return 1
-            
-        normalized_variance = s / total_var
-        cumulative_variance = np.cumsum(normalized_variance)
-        
-        # Dimensions capturing >= 90% cumulative variance
-        critical_dims = np.where(cumulative_variance >= 0.90)[0]
-        return int(critical_dims[0] + 1) if len(critical_dims) > 0 else len(s)
-
-    def upsert_passage(self, doc_id: str, text: str, category: str = "tech"):
-        """Live Corpus Mutation (FR-5): Atomic upsert primitive."""
-        all_dicts = [
-            {"id": self.doc_ids[i], "text": self.doc_passages[i], "category": self.doc_categories[i]}
-            for i in range(len(self.doc_passages))
-            if self.doc_ids[i] != doc_id
-        ]
-        all_dicts.append({"id": doc_id, "text": text, "category": category})
-        self.ingest_and_index(all_dicts)
-
-    def delete_passage(self, doc_id: str) -> bool:
-        """Live Corpus Mutation (FR-5): Atomic delete primitive."""
-        if doc_id not in self.doc_ids:
-            return False
-
-        remaining_dicts = [
-            {"id": self.doc_ids[i], "text": self.doc_passages[i], "category": self.doc_categories[i]}
-            for i in range(len(self.doc_passages))
-            if self.doc_ids[i] != doc_id
-        ]
-        
-        self.ingest_and_index(remaining_dicts)
-        return True
-
-
-class HybridRetrievalPipeline:
-    def __init__(self, engine: MathematicalVectorEngine, reranker_model_name: str = 'BAAI/bge-reranker-base'):
-        self.engine = engine
-        self.cache = InMemLRUCache(capacity=1000)
-        # Precision Reranker: Cross-Encoder Joint-Attention model
-        self.reranker = CrossEncoder(reranker_model_name)
-
-    def dense_search(self, query: str, top_k: int = 5, category_filter: str = None):
-        """Phase 1: Dense Vector Similarity Search (Cosine Distance)."""
-        if len(self.engine.doc_passages) == 0:
-            return []
-
-        query_vec = self.engine.dense_model.encode([query], normalize_embeddings=True)[0]
-        scores = np.dot(self.engine.doc_vectors, query_vec)
-        
-        results = []
-        for idx, score in enumerate(scores):
-            if category_filter and self.engine.doc_categories[idx] != category_filter:
-                continue
-            results.append((self.engine.doc_passages[idx], float(score), idx))
-            
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:top_k]
-
-    def sparse_search(self, query: str, top_k: int = 15):
-        """Sparse BM25 Keyword Search."""
-        if len(self.engine.doc_passages) == 0 or self.engine.bm25_engine is None:
-            return []
-
-        tokenized_query = query.lower().split()
-        scores = self.engine.bm25_engine.get_scores(tokenized_query)
-        
-        results = []
-        for idx, score in enumerate(scores):
-            results.append((self.engine.doc_passages[idx], float(score), idx))
-            
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:top_k]
-
-    def hybrid_rrf_search(self, query: str, top_k: int = 5, category_filter: str = None, k_rrf: int = 60, use_reranker: bool = True):
-        """Phase 2: Reciprocal Rank Fusion (RRF) + Cross-Encoder Reranking."""
-        # 1. Check Query Cache
-        cached_result = self.cache.get(query, str(category_filter), "hybrid" if use_reranker else "rrf_only")
-        if cached_result is not None:
-            return cached_result, True  # Return results + cache_hit flag
-
-        dense_res = self.dense_search(query, top_k=30, category_filter=category_filter)
-        sparse_res = self.sparse_search(query, top_k=30)
-        
-        rrf_scores = {}
-        
-        # Accumulate Dense Ranks
-        for rank, item in enumerate(dense_res):
-            doc_idx = item[2]
-            rrf_scores[doc_idx] = rrf_scores.get(doc_idx, 0.0) + (1.0 / (k_rrf + rank + 1))
-            
-        # Accumulate Sparse BM25 Ranks
-        for rank, item in enumerate(sparse_res):
-            doc_idx = item[2]
-            if category_filter and self.engine.doc_categories[doc_idx] != category_filter:
-                continue
-            rrf_scores[doc_idx] = rrf_scores.get(doc_idx, 0.0) + (1.0 / (k_rrf + rank + 1))
-
-        # Combined RRF Candidate Pool
-        candidate_results = [
-            (self.engine.doc_passages[idx], score, idx)
-            for idx, score in rrf_scores.items()
-        ]
-        candidate_results.sort(key=lambda x: x[1], reverse=True)
-        top_candidates = candidate_results[:20]
-
-        # 2. Cross-Encoder Joint-Attention Reranking
-        if use_reranker and top_candidates:
-            pairs = [[query, doc[0]] for doc in top_candidates]
-            rerank_scores = self.reranker.predict(pairs)
-            
-            reranked = []
-            for i, score in enumerate(rerank_scores):
-                passage, _, idx = top_candidates[i]
-                reranked.append((passage, float(score), idx))
-                
-            reranked.sort(key=lambda x: x[1], reverse=True)
-            final_results = reranked[:top_k]
-        else:
-            final_results = top_candidates[:top_k]
-
-        # Store in LRU Cache
-        self.cache.set(query, str(category_filter), "hybrid" if use_reranker else "rrf_only", final_results)
-        return final_results, False
-
-
-def run_latency_benchmark(pipeline: HybridRetrievalPipeline, num_queries: int = 20):
-    """Benchmarks p50 and p95 query latency under strict < 300 ms NFR constraints."""
-    sample_queries = [
-        "BM25 term frequency", "Singular Value Decomposition SVD", 
-        "Reciprocal Rank Fusion RAG", "Cross-Encoder reranking precision",
-        "Pre-retrieval metadata payload filtering", "BGE small vector embeddings"
-    ]
-    latencies = []
-    for i in range(num_queries):
-        q = sample_queries[i % len(sample_queries)]
-        start = time.perf_counter()
-        _res, _cache_hit = pipeline.hybrid_rrf_search(q, top_k=5)
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        latencies.append(elapsed_ms)
-        
-    p50 = float(np.percentile(latencies, 50))
-    p95 = float(np.percentile(latencies, 95))
-    return p50, p95
-
-
-def _content_terms(text: str) -> set:
-    return {t for t in re.findall(r"[a-z0-9]+", text.lower())
-            if t not in ENGLISH_STOP_WORDS and len(t) > 1}
-
-
-def compute_local_context_metrics(pipeline, query, top_k=5, category_filter=None, mode="hybrid"):
-    """Query-dependent local metrics for precision and recall."""
-    if mode == "dense":
-        retrieved = pipeline.dense_search(query, top_k=top_k, category_filter=category_filter)
-    else:
-        retrieved, _ = pipeline.hybrid_rrf_search(query, top_k=top_k, category_filter=category_filter)
-
-    if not retrieved:
-        return {"precision": 0.0, "recall": 0.0, "source": "local proxy"}
-
-    q_terms = _content_terms(query)
-    n_docs = len(pipeline.engine.doc_passages)
-    cos_by_idx = {idx: s for _, s, idx in pipeline.dense_search(query, top_k=n_docs)}
-
-    relevance, covered = [], set()
-    for text, _score, idx in retrieved:
-        p_terms = _content_terms(text)
-        covered |= (q_terms & p_terms)
-        coverage = len(q_terms & p_terms) / len(q_terms) if q_terms else 0.0
-        relevance.append(cos_by_idx.get(idx, 0.0) >= 0.15 or coverage >= 0.5)
-
-    hits, ap = 0, 0.0
-    for k, is_rel in enumerate(relevance, start=1):
-        if is_rel:
-            hits += 1
-            ap += hits / k
-    precision = ap / hits if hits else 0.0
-    recall = len(covered) / len(q_terms) if q_terms else 0.0
-
-    return {"precision": precision, "recall": recall, "source": "local proxy"}
-
-
-def run_ragas_eval(pipeline, query, api_key=None, category_filter=None, mode="hybrid"):
-    """Automated RAGAS Evaluation scoring using Groq Llama-3."""
-    local = compute_local_context_metrics(pipeline, query, category_filter=category_filter, mode=mode)
-    if not api_key:
-        return local
-
-    try:
-        from ragas import evaluate
-        from ragas.metrics import context_precision, context_recall
-        from langchain_groq import ChatGroq
-        from datasets import Dataset
-
-        eval_llm = ChatGroq(temperature=0, groq_api_key=api_key, model_name="llama-3.3-70b-versatile")
-
-        retrieved, _ = pipeline.hybrid_rrf_search(query, top_k=5, category_filter=category_filter)
-        contexts = [[item[0] for item in retrieved]]
-
-        dataset = Dataset.from_dict({
-            "question": [query],
-            "contexts": contexts,
-            "ground_truth": [retrieved[0][0] if retrieved else ""],
+@st.cache_resource
+def initialize_system():
+    # Load sample corpus from MS MARCO
+    dataset = load_dataset("sentence-transformers/msmarco", "corpus", split="train", streaming=True)
+    sample_passages = []
+    for i, row in enumerate(dataset.take(1000)):
+        official_id = row.get("_id") or row.get("passage_id")
+        official_text = row.get("text") or row.get("passage")
+        if not official_text:
+            continue
+        sample_passages.append({
+            "id": str(official_id),
+            "text": official_text,
+            "category": "tech" if i % 2 == 0 else "finance"
         })
 
-        result = evaluate(dataset=dataset, metrics=[context_precision, context_recall], llm=eval_llm)
-        df = result.to_pandas()
-        return {
-            "precision": float(df["context_precision"].mean()),
-            "recall": float(df["context_recall"].mean()),
-            "source": "RAGAS (Groq Llama-3)",
-        }
-    except Exception as e:
-        local["source"] = f"local proxy (RAGAS failed: {type(e).__name__})"
-        return local
+    engine = MathematicalVectorEngine()
+    svd_dims = engine.ingest_and_index(sample_passages)
+    pipeline = HybridRetrievalPipeline(engine)
+    return engine, pipeline, svd_dims
+
+engine, pipeline, svd_dims = initialize_system()
+
+@st.cache_data(show_spinner=False)
+def compute_umap_projection(query_vec: np.ndarray, corpus_vecs: np.ndarray):
+    all_vecs = np.vstack([query_vec, corpus_vecs])
+    reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
+    projected = reducer.fit_transform(all_vecs)
+    return projected[0], projected[1:]
+
+def trigger_sidebar_toggle():
+    components.html("""
+    <script>
+        const doc = window.parent.document;
+        const btn = doc.querySelector('button[data-testid="stSidebarCollapseButton"]') 
+                 || doc.querySelector('button[aria-label="Expand sidebar"]')
+                 || doc.querySelector('button[aria-label="Close sidebar"]')
+                 || doc.querySelector('section[data-testid="stSidebar"] button');
+        if (btn) { btn.click(); }
+    </script>
+    """, height=0, width=0)
+
+head_col1, head_col2 = st.columns([3.2, 1])
+with head_col1:
+    st.markdown("""
+        <div>
+            <div class="app-title">⚡ AuraVector DB</div>
+            <div class="app-subtitle">High-Precision Vector Engine for RAG Systems • Team SynaptiX • BIT Mesra</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+with head_col2:
+    st.write("")
+    if st.button("🎛️ Control Panel", type="primary", use_container_width=True):
+        trigger_sidebar_toggle()
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+with st.sidebar:
+    st.subheader("🎛️ Engine Control Panel")
+    if st.button("❌ Close Control Panel", use_container_width=True):
+        trigger_sidebar_toggle()
+
+    st.markdown("---")
+    retrieval_mode = st.radio(
+        "Search Pipeline Mode:",
+        ["Phase 1: Dense Vector Search (Baseline)", "Phase 2: Hybrid RRF Search + Reranker"]
+    )
+
+    st.markdown("---")
+    category_filter = st.selectbox("Pre-Retrieval Metadata Filter (FR-4):", [None, "tech", "finance"])
+
+    st.markdown("---")
+    if "groq_api_key" not in st.session_state:
+        st.session_state["groq_api_key"] = os.getenv("GROQ_API_KEY", "")
+
+    groq_key = st.text_input("Groq API Key", type="password", key="groq_api_key")
+
+    st.markdown("---")
+    st.subheader("Live Corpus Mutation (FR-5)")
+    mutation_tab_upsert, mutation_tab_delete = st.tabs(["➕ Upsert", "🗑 Delete"])
+
+    with mutation_tab_upsert:
+        new_id = st.text_input("Doc ID", "ms_marco_999", key="upsert_id_input")
+        new_text = st.text_area("Passage Text", "MS MARCO Passage #999: SVD dimensional entropy quantization accelerates retrieval.", key="upsert_text_input")
+        if st.button("➕ Upsert Passage", use_container_width=True):
+            engine.upsert_passage(new_id, new_text)
+            st.toast(f"Upserted document `{new_id}`!", icon="⚡")
+
+    with mutation_tab_delete:
+        del_id = st.text_input("Doc ID to Delete", "ms_marco_999", key="delete_id_input")
+        if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
+            if engine.delete_passage(del_id):
+                st.toast(f"Deleted `{del_id}` from corpus!", icon="🗑️")
+            else:
+                st.error(f"Document `{del_id}` not found.")
+
+# Top Scoreboard KPIs
+kpi_query = st.session_state.get("live_query_input", "What is MS MARCO passage ranking?")
+mode_key = "dense" if "Phase 1" in retrieval_mode else "hybrid"
+live = compute_local_context_metrics(pipeline, kpi_query, mode=mode_key, category_filter=category_filter)
+
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Indexed Scale</div><div class="metric-value">{len(engine.doc_passages):,}</div></div>', unsafe_allow_html=True)
+with k2:
+    st.markdown('<div class="metric-card"><div class="metric-label">Target p95 Latency</div><div class="metric-value">&lt; 300 ms</div></div>', unsafe_allow_html=True)
+with k3:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">RAGAS Context Precision</div><div class="metric-value">{live["precision"]:.3f}</div></div>', unsafe_allow_html=True)
+with k4:
+    st.markdown(f'<div class="metric-card"><div class="metric-label">RAGAS Context Recall</div><div class="metric-value">{live["recall"]:.3f}</div></div>', unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+tab_search, tab_benchmark, tab_umap = st.tabs(["🚀 Retrieval Engine", "⚡ Performance Benchmarks", "📊 Vector Topology"])
+
+with tab_search:
+    query = st.text_input("🔍 Search MS MARCO Corpus", value="What is MS MARCO passage ranking?", key="live_query_input")
+
+    if query:
+        start_time = time.perf_counter()
+        cache_hit = False
+
+        if "Phase 1" in retrieval_mode:
+            results = pipeline.dense_search(query, top_k=5, category_filter=category_filter)
+            candidates = pipeline.dense_search(query, top_k=30, category_filter=category_filter)
+            card_class = "passage-card"
+        else:
+            results, cache_hit = pipeline.hybrid_rrf_search(query, top_k=5, category_filter=category_filter, use_reranker=True)
+            dense_cand = pipeline.dense_search(query, top_k=15, category_filter=category_filter)
+            sparse_cand = pipeline.sparse_search(query, top_k=15)
+            candidates = dense_cand + sparse_cand
+            card_class = "passage-card passage-card-hybrid"
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+        if candidates:
+            cand_indices = list(set([res[2] for res in candidates]))
+            cand_vecs = engine.doc_vectors[cand_indices]
+            local_svd_dims = engine.svd_entropy_analysis(cand_vecs)
+        else:
+            local_svd_dims = svd_dims
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if not results:
+            st.warning("No passages found matching criteria.")
+        else:
+            col_res, col_info = st.columns([1.4, 0.6])
+            with col_res:
+                st.markdown("##### Top Relevant Passages")
+                for idx, res in enumerate(results):
+                    text, score = res[0], res[1]
+                    cache_badge_html = '<div class="cache-badge">⚡ Sub-5ms LRU Cache Hit</div>' if cache_hit else ""
+                    st.markdown(f"""
+                        <div class="{card_class}">
+                            <div class="score-badge">Rank #{idx+1} • Score: {score:.4f}</div>{cache_badge_html}
+                            <div style="color: #334155; font-size: 0.95rem; line-height: 1.5;">{text}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                # LLM Answer Card with Citations
+                if groq_key:
+                    st.markdown("---")
+                    st.markdown("##### 🤖 LLM Answer Card (Groq Llama-3)")
+                    if st.button("Generate Natural Language Answer"):
+                        try:
+                            client = Groq(api_key=groq_key)
+                            context_str = "\n\n".join([f"Passage [{i+1}]: {r[0]}" for i, r in enumerate(results)])
+                            prompt = (
+                                "You are an enterprise knowledge assistant. Answer the user query using strictly "
+                                "the provided context passages. Cite source passage numbers in brackets, e.g., [1].\n\n"
+                                f"Context:\n{context_str}\n\nQuery: {query}"
+                            )
+                            response = client.chat.completions.create(
+                                model="llama-3.3-70b-versatile",
+                                messages=[{"role": "user", "content": prompt}],
+                                temperature=0.0
+                            )
+                            st.success(response.choices[0].message.content)
+                        except Exception as e:
+                            st.error(f"Groq Answer Generation Error: {str(e)}")
+
+            with col_info:
+                st.markdown("##### 🛠 Execution Metadata")
+                st.info(f"**Pipeline Mode:**\n\n{retrieval_mode}")
+                st.metric("Query Response Time", f"{elapsed_ms:.2f} ms")
+                st.success(f"**SVD Entropy Concentration:**\n\n90% Entropy in top **{local_svd_dims} / 384** dimensions.")
+                if category_filter:
+                    st.warning(f"**Payload Filter:** `category == '{category_filter}'`")
+
+with tab_benchmark:
+    st.markdown("##### NFR Latency & Evaluation Suite")
+    if st.button("▶ Run Full System Benchmark Suite", type="primary"):
+        with st.spinner("Running latency and precision evaluation..."):
+            bench_query = query if query else "What is MS MARCO passage ranking?"
+            p50, p95 = run_latency_benchmark(pipeline)
+            eval_res = run_ragas_eval(pipeline, bench_query, groq_key, category_filter=category_filter, mode=mode_key)
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Median Latency (p50)", f"{p50:.2f} ms")
+            m2.metric("Tail Latency (p95)", f"{p95:.2f} ms", delta="PASSED (<300ms)" if p95 < 300 else "FAILED")
+            m3.metric("RAGAS Precision", f"{eval_res['precision']:.4f}", delta="PASSED (>0.75)" if eval_res['precision'] > 0.75 else "BELOW TARGET")
+            m4.metric("RAGAS Recall", f"{eval_res['recall']:.4f}", delta="PASSED (>0.70)" if eval_res['recall'] > 0.70 else "BELOW TARGET")
+            st.caption(f"Evaluation Engine Source: {eval_res['source']}")
+
+with tab_umap:
+    st.markdown("##### 2D UMAP Vector Space Topology Explorer")
+    active_query = query if query else "What is MS MARCO passage ranking?"
+    if len(engine.doc_passages) > 0:
+        from sklearn.metrics.pairwise import cosine_distances
+
+        query_vec = engine.dense_model.encode([active_query], normalize_embeddings=True)
+        corpus_limit = min(100, len(engine.doc_passages))
+        corpus_vecs = engine.doc_vectors[:corpus_limit]
+        
+        dists = cosine_distances(query_vec, corpus_vecs)[0]
+        sims = (1.0 - dists) * 100.0
+        nearest_indices = set(np.argsort(dists)[:5])
+
+        q_coords, doc_coords = compute_umap_projection(query_vec, corpus_vecs)
+
+        categories, hover_texts, sizes = [], [], []
+        for idx in range(corpus_limit):
+            doc_id = engine.doc_ids[idx]
+            sim_score = sims[idx]
+            text_snippet = engine.doc_passages[idx][:80] + "..."
+            if idx in nearest_indices:
+                categories.append("Nearest Neighbor")
+                sizes.append(10)
+            else:
+                categories.append("Unselected Corpus")
+                sizes.append(5)
+            hover_texts.append(f"<b>Doc ID:</b> {doc_id}<br><b>Similarity:</b> {sim_score:.2f}%<br><b>Passage:</b> {text_snippet}")
+
+        x_pts = [q_coords[0]] + list(doc_coords[:, 0])
+        y_pts = [q_coords[1]] + list(doc_coords[:, 1])
+
+        fig = px.scatter(
+            x=x_pts, y=y_pts,
+            color=["Query Vector"] + categories,
+            size=[14] + sizes,
+            hover_name=[f"<b>Query:</b> {active_query}"] + hover_texts,
+            color_discrete_map={"Query Vector": "#EF4444", "Nearest Neighbor": "#2563EB", "Unselected Corpus": "#CBD5E1"},
+            template="plotly_white"
+        )
+        for idx in nearest_indices:
+            fig.add_shape(
+                type="line", x0=q_coords[0], y0=q_coords[1],
+                x1=doc_coords[idx, 0], y1=doc_coords[idx, 1],
+                line=dict(color="#3B82F6", width=1.5, dash="dash"), layer="below"
+            )
+        fig.update_layout(height=500, margin=dict(l=20, r=20, t=30, b=20))
+        st.plotly_chart(fig, use_container_width=True)

@@ -156,7 +156,7 @@ def initialize_system():
     ]
     
     sample_passages = []
-    for i in range(3000):
+    for i in range(100):
         domain_text = base_domains[i % len(base_domains)]
         sample_passages.append({
             "id": f"ms_marco_{i}",

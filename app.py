@@ -6,7 +6,7 @@ import umap
 import plotly.express as px
 from backend import MathematicalVectorEngine, HybridRetrievalPipeline, run_latency_benchmark, run_ragas_eval
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 # Page Configuration
@@ -14,33 +14,142 @@ st.set_page_config(
     page_title="AuraVector DB | High-Precision Vector Engine",
     page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# Dark Mode UI Styling
+# Premium Dark Theme CSS Overrides
 st.markdown("""
 <style>
-    .title-header {
-        font-family: 'Inter', sans-serif; font-weight: 800; font-size: 2.2rem;
-        background: linear-gradient(90deg, #6366F1 0%, #10B981 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        margin-bottom: 0px;
+    /* Dark Theme Core Background Override */
+    .stAppViewContainer, .stApp {
+        background-color: #090D16 !important;
+        color: #F1F5F9;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
+    
+    /* Container Padding */
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 2rem;
+        max-width: 1250px;
+    }
+
+    /* Custom Header Bar */
+    .app-header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(135deg, #131C2E 0%, #0F172A 100%);
+        padding: 18px 28px;
+        border-radius: 12px;
+        border: 1px solid #1E293B;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .app-title {
+        font-weight: 800;
+        font-size: 1.9rem;
+        background: linear-gradient(90deg, #818CF8 0%, #34D399 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin: 0;
+        letter-spacing: -0.5px;
+    }
+    .app-subtitle {
+        color: #94A3B8;
+        font-size: 0.85rem;
+        margin-top: 2px;
+        font-weight: 500;
+    }
+
+    /* KPI Metrics Styling */
+    .metric-card {
+        background: #131C2E;
+        border: 1px solid #1E293B;
+        border-radius: 12px;
+        padding: 16px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        transition: all 0.25s ease-in-out;
+    }
+    .metric-card:hover {
+        border-color: #6366F1;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(99, 102, 241, 0.15);
+    }
+    .metric-value {
+        font-size: 1.7rem;
+        font-weight: 800;
+        color: #34D399;
+        letter-spacing: -0.5px;
+    }
+    .metric-label {
+        font-size: 0.72rem;
+        color: #64748B;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+
+    /* Search Passage Cards */
     .passage-card {
-        background-color: #1E293B; border-radius: 8px; padding: 16px;
-        border-left: 5px solid #6366F1; margin-bottom: 12px;
+        background: #131C2E;
+        border-radius: 10px;
+        padding: 20px;
+        border-left: 4px solid #6366F1;
+        border-top: 1px solid #1E293B;
+        border-right: 1px solid #1E293B;
+        border-bottom: 1px solid #1E293B;
+        margin-bottom: 14px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.25);
     }
-    .passage-card-hybrid { border-left: 5px solid #10B981; }
+    .passage-card-hybrid { 
+        border-left-color: #34D399; 
+    }
+    
     .score-badge {
-        background-color: #334155; color: #F8FAFC; font-size: 0.8rem;
-        font-weight: 600; padding: 3px 8px; border-radius: 12px; display: inline-block; margin-bottom: 6px;
+        background-color: #1E293B;
+        color: #38BDF8;
+        border: 1px solid #334155;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 4px 12px;
+        border-radius: 20px;
+        display: inline-block;
+        margin-bottom: 12px;
     }
-    .metric-container {
-        background-color: #1E293B; border: 1px solid #334155;
-        border-radius: 8px; padding: 10px; text-align: center;
+
+    /* Sidebar Drawer Styling Override */
+    [data-testid="stSidebar"] {
+        background-color: #0D1322 !important;
+        border-left: 1px solid #1E293B !important;
     }
-    .metric-value { font-size: 1.5rem; font-weight: 700; color: #10B981; }
-    .metric-label { font-size: 0.75rem; color: #94A3B8; text-transform: uppercase; }
+    [data-testid="stSidebar"] * {
+        color: #E2E8F0 !important;
+    }
+
+    /* Custom Input and Tab Styling for Dark Mode */
+    .stTextInput input, .stTextArea textarea, .stSelectbox > div {
+        background-color: #131C2E !important;
+        color: #F8FAFC !important;
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
+    }
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border-color: #6366F1 !important;
+        box-shadow: 0 0 0 1px #6366F1 !important;
+    }
+
+    /* Tab active indicator styling */
+    button[data-baseweb="tab"] {
+        color: #94A3B8 !important;
+        font-weight: 600 !important;
+    }
+    button[aria-selected="true"] {
+        color: #818CF8 !important;
+        border-bottom-color: #818CF8 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,34 +185,49 @@ def initialize_system():
 
 engine, pipeline, svd_dims = initialize_system()
 
-# Header Section
-st.markdown('<div class="title-header">AuraVector DB</div>', unsafe_allow_html=True)
-st.caption("High-Precision Vector Engine for RAG Systems • MS MARCO Benchmark • Team SynaptiX • BIT Mesra")
+# State Management for Side Control Panel Trigger
+if "show_drawer" not in st.session_state:
+    st.session_state["show_drawer"] = False
+
+# Application Dark Header Bar with Drawer Toggle Button
+head_col1, head_col2 = st.columns([3.2, 1])
+
+with head_col1:
+    st.markdown("""
+        <div>
+            <div class="app-title">⚡ AuraVector DB</div>
+            <div class="app-subtitle">High-Precision Vector Engine for RAG Systems • Team SynaptiX • BIT Mesra</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+with head_col2:
+    st.write("") # Spacer
+    if st.button("🎛️ Control Panel", type="primary", use_container_width=True):
+        st.session_state["show_drawer"] = not st.session_state["show_drawer"]
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Main Page Navigation Tabs with AuraVector DB Content
-tab_search, tab_benchmark, tab_umap = st.tabs([
-    "⚡ AuraVector DB Search", 
-    "📊 Performance Benchmarks", 
-    "🗺️ 2D Vector Topology"
-])
+# Slide-Out Side Control Panel Drawer
+if st.session_state["show_drawer"]:
+    with st.sidebar:
+        st.subheader("🎛️ Engine Control Panel")
+        st.caption("Configure retrieval algorithms, metadata filters, and corpus mutations.")
+        
+        if st.button("❌ Close Panel", use_container_width=True):
+            st.session_state["show_drawer"] = False
+            st.rerun()
 
-# Collapsible Engine Control Panel
-with st.expander("🎛️ Engine Control Panel", expanded=False):
-    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1, 1, 1])
-    
-    with ctrl_col1:
+        st.markdown("---")
+        
         retrieval_mode = st.radio(
-            "Select Search Mode:",
+            "Search Pipeline Mode:",
             ["Phase 1: Dense Vector Search (Baseline)", "Phase 2: Hybrid RRF Search + Reranker"]
         )
-        category_filter = st.selectbox(
-            "Pre-Retrieval Metadata Filter (FR-4):", 
-            [None, "tech", "finance"]
-        )
 
-    with ctrl_col2:
+        st.markdown("---")
+        category_filter = st.selectbox("Pre-Retrieval Metadata Filter (FR-4):", [None, "tech", "finance"])
+
+        st.markdown("---")
         if "groq_api_key" not in st.session_state:
             st.session_state["groq_api_key"] = os.getenv("GROQ_API_KEY", "")
 
@@ -114,9 +238,10 @@ with st.expander("🎛️ Engine Control Panel", expanded=False):
             help="Pre-loaded from .env if present. You can edit or override it here."
         )
 
-    with ctrl_col3:
+        st.markdown("---")
         st.subheader("Live Corpus Mutation (FR-5)")
-        mutation_tab_upsert, mutation_tab_delete = st.tabs(["➕ Upsert", "🗑️ Delete"])
+
+        mutation_tab_upsert, mutation_tab_delete = st.tabs(["➕ Upsert", "🗑️️ Delete"])
 
         with mutation_tab_upsert:
             new_id = st.text_input("Doc ID", "ms_marco_999", key="upsert_id_input")
@@ -140,21 +265,40 @@ with st.expander("🎛️ Engine Control Panel", expanded=False):
                         st.error(f"Document `{del_id}` not found in index.")
                 else:
                     st.error("`delete_passage` method missing from engine backend.")
+else:
+    # Default settings when panel is toggled off
+    retrieval_mode = "Phase 1: Dense Vector Search (Baseline)"
+    category_filter = None
+    groq_key = os.getenv("GROQ_API_KEY", "")
 
-st.markdown("<br>", unsafe_allow_html=True)
-
-# KPI Scorecard
+# Key Performance Indicators
 k1, k2, k3, k4 = st.columns(4)
-with k1: st.markdown('<div class="metric-container"><div class="metric-label">Index Scale</div><div class="metric-value">100,000+</div></div>', unsafe_allow_html=True)
-with k2: st.markdown('<div class="metric-container"><div class="metric-label">Target p95 Latency</div><div class="metric-value" style="color:#6366F1;">< 300 ms</div></div>', unsafe_allow_html=True)
-with k3: st.markdown('<div class="metric-container"><div class="metric-label">Context Precision</div><div class="metric-value">0.831</div></div>', unsafe_allow_html=True)
-with k4: st.markdown('<div class="metric-container"><div class="metric-label">Context Recall</div><div class="metric-value">0.792</div></div>', unsafe_allow_html=True)
+with k1: 
+    st.markdown('<div class="metric-card"><div class="metric-label">Index Scale</div><div class="metric-value">100,000+</div></div>', unsafe_allow_html=True)
+with k2: 
+    st.markdown('<div class="metric-card"><div class="metric-label">Target p95 Latency</div><div class="metric-value" style="color:#818CF8;">< 300 ms</div></div>', unsafe_allow_html=True)
+with k3: 
+    st.markdown('<div class="metric-card"><div class="metric-label">Context Precision</div><div class="metric-value">0.831</div></div>', unsafe_allow_html=True)
+with k4: 
+    st.markdown('<div class="metric-card"><div class="metric-label">Context Recall</div><div class="metric-value">0.792</div></div>', unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Tab 1: Search Interface
+# Main Navigation Tabs
+tab_search, tab_benchmark, tab_umap = st.tabs([
+    "🚀 Retrieval Engine", 
+    "⚡ Performance Benchmarks", 
+    "📊 Vector Topology"
+])
+
+# Tab 1: Retrieval Interface
 with tab_search:
-    query = st.text_input("Enter MS MARCO Search Query (Press Enter):", value="What is MS MARCO passage ranking?", key="live_query_input")
+    query = st.text_input(
+        "🔍 Search MS MARCO Corpus", 
+        value="What is MS MARCO passage ranking?", 
+        key="live_query_input", 
+        placeholder="Enter your query..."
+    )
 
     if query:
         if "Phase 1" in retrieval_mode:
@@ -168,7 +312,6 @@ with tab_search:
             candidates = dense_cand + sparse_cand
             card_class = "passage-card passage-card-hybrid"
 
-        # Dynamic SVD Entropy computed across Candidate Pool
         if candidates:
             cand_indices = list(set([res[2] for res in candidates]))
             cand_vecs = engine.doc_vectors[cand_indices]
@@ -176,39 +319,40 @@ with tab_search:
         else:
             local_svd_dims = svd_dims
 
-        st.markdown("---")
+        st.markdown("<br>", unsafe_allow_html=True)
         if not results:
             st.warning("No passages found matching the given metadata filter or query.")
         else:
-            col_res, col_info = st.columns([1.3, 0.7])
+            col_res, col_info = st.columns([1.4, 0.6])
             with col_res:
-                st.subheader("Top-5 MS MARCO Passages")
+                st.markdown("##### Top Relevant Passages")
                 for idx, res in enumerate(results):
                     text, score = res[0], res[1]
                     st.markdown(
                         f"""
                         <div class="{card_class}">
                             <div class="score-badge">Rank #{idx+1} • Score: {score:.4f}</div>
-                            <div style="color: #E2E8F0; font-size: 0.95rem;">{text}</div>
+                            <div style="color: #E2E8F0; font-size: 0.95rem; line-height: 1.5;">{text}</div>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
             
             with col_info:
-                st.subheader("🛠️ System Execution Logs")
-                st.info(f"**Search Pipeline:**\n\n{retrieval_mode}")
-                st.success(f"**Candidate Space SVD Analysis:**\n\n90% Entropy concentrated in top **{local_svd_dims} / 384** dimensions across candidate space.")
+                st.markdown("##### 🛠️ Execution Metadata")
+                st.info(f"**Pipeline Mode:**\n\n{retrieval_mode}")
+                st.success(f"**SVD Entropy Concentration:**\n\n90% Entropy concentrated in top **{local_svd_dims} / 384** dimensions across candidate pool.")
                 if category_filter:
-                    st.warning(f"**Pre-Filter Applied:** `category == '{category_filter}'`")
+                    st.warning(f"**Metadata Filter:** `category == '{category_filter}'`")
 
-# Tab 2: Performance Benchmarks
+# Tab 2: System Benchmarks
 with tab_benchmark:
-    st.subheader("System Benchmark Suite (NFR-1, NFR-2, NFR-3)")
-    st.caption("Executes consecutive queries over MS MARCO index to record latency percentiles.")
+    st.markdown("##### NFR Latency & Evaluation Suite")
+    st.caption("Executes automated query sequences to record latency percentiles and RAGAS metric scores.")
     
+    st.markdown("<br>", unsafe_allow_html=True)
     if st.button("▶ Run Full System Benchmark Suite", type="primary"):
-        with st.spinner("Executing benchmark queries..."):
+        with st.spinner("Executing benchmarks..."):
             p50, p95 = run_latency_benchmark(pipeline)
             eval_res = run_ragas_eval(pipeline, query if 'query' in locals() else "What is MS MARCO passage ranking?", groq_key)
             
@@ -218,11 +362,12 @@ with tab_benchmark:
             with m3: st.metric("RAGAS Precision", f"{eval_res['precision']:.4f}", delta="PASSED (>0.75)")
             with m4: st.metric("RAGAS Recall", f"{eval_res['recall']:.4f}", delta="PASSED (>0.70)")
 
-# Tab 3: UMAP Projections
+# Tab 3: UMAP Topology
 with tab_umap:
-    st.subheader("High-Dimensional Vector Space Topology")
-    st.caption("Plots query vector positioning relative to MS MARCO index embeddings via UMAP projection.")
+    st.markdown("##### High-Dimensional Vector Space Topology")
+    st.caption("Plots query vector positioning relative to index embeddings using UMAP projection.")
     
+    st.markdown("<br>", unsafe_allow_html=True)
     active_query = query if 'query' in locals() and query else "What is MS MARCO passage ranking?"
     if len(engine.doc_passages) > 0:
         query_vec = engine.vectorizer.transform([active_query]).toarray()
@@ -244,8 +389,14 @@ with tab_umap:
         fig = px.scatter(
             x=projected[:, 0], y=projected[:, 1],
             color=colors, hover_name=labels,
-            color_discrete_map={"Query Vector": "#EF4444", "Top Candidates": "#10B981", "Unselected Corpus": "#475569"},
+            color_discrete_map={"Query Vector": "#F87171", "Top Candidates": "#34D399", "Unselected Corpus": "#334155"},
             template="plotly_dark"
         )
-        fig.update_layout(height=500, margin=dict(l=10, r=10, t=20, b=10))
+        fig.update_layout(
+            height=500, 
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=10, r=10, t=10, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
         st.plotly_chart(fig, use_container_width=True)

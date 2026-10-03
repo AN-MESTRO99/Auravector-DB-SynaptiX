@@ -6,6 +6,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from rank_bm25 import BM25Okapi
 
+
 class MathematicalVectorEngine:
     def __init__(self):
         self.vectorizer = TfidfVectorizer(
@@ -183,13 +184,49 @@ def run_latency_benchmark(pipeline: HybridRetrievalPipeline, num_queries: int = 
 
 
 def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str = None):
-    """Evaluates context quality dynamically with Groq LLM if API key is present."""
-    if not api_key:
-        return {
-            "precision": 0.831,
-            "recall": 0.792
-        }
+    """Evaluates context quality dynamically with Groq LLM if API key is present.
 
+    Falls back to a deterministic, mathematical precision/recall computation
+    based on Jaccard term-overlap scoring when no API key is available or when
+    RAGAS/Groq raises an exception.  No hard-coded metric values are returned.
+    """
+
+    def _compute_local_metrics(q: str, top_k: int = 5) -> dict:
+        """
+        Computes context precision and recall from actual retrieval results.
+
+        Relevance per passage: Jaccard similarity between query tokens and
+        passage tokens, normalised to [0, 1].
+
+        Context Precision = fraction of top-k passages with Jaccard >= 0.05.
+        Context Recall    = mean Jaccard score across all top-k passages.
+        """
+        retrieved = pipeline.hybrid_rrf_search(q, top_k=top_k)
+        if not retrieved:
+            return {"precision": 0.0, "recall": 0.0}
+
+        query_tokens = set(q.lower().split())
+        relevance_scores = []
+        for passage_text, _score, _idx in retrieved:
+            passage_tokens = set(passage_text.lower().split())
+            if not passage_tokens:
+                relevance_scores.append(0.0)
+                continue
+            intersection = query_tokens & passage_tokens
+            union = query_tokens | passage_tokens
+            relevance_scores.append(len(intersection) / len(union) if union else 0.0)
+
+        relevance_threshold = 0.05
+        n = len(relevance_scores)
+        precision = sum(1 for s in relevance_scores if s >= relevance_threshold) / n
+        recall = float(np.mean(relevance_scores))
+        return {"precision": round(precision, 4), "recall": round(recall, 4)}
+
+    # -- No API key: compute metrics locally from real retrieval results -------
+    if not api_key:
+        return _compute_local_metrics(query)
+
+    # -- Groq + RAGAS path -----------------------------------------------------
     try:
         from ragas import evaluate
         from ragas.metrics import context_precision, context_recall
@@ -197,7 +234,7 @@ def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str =
         from datasets import Dataset
 
         eval_llm = ChatGroq(temperature=0, groq_api_key=api_key, model_name="llama-3.1-70b-versatile")
-        
+
         retrieved = pipeline.hybrid_rrf_search(query, top_k=5)
         contexts = [[item[0] for item in retrieved]]
 
@@ -214,14 +251,15 @@ def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str =
             llm=eval_llm
         )
 
-        return {
-            "precision": float(result.get("context_precision", 0.831)),
-            "recall": float(result.get("context_recall", 0.792))
-        }
+        cp = result.get("context_precision")
+        cr = result.get("context_recall")
+
+        # If RAGAS returned None/missing keys, compute locally
+        if cp is None or cr is None:
+            return _compute_local_metrics(query)
+
+        return {"precision": float(cp), "recall": float(cr)}
 
     except Exception:
-        # Graceful fallback to baseline metrics if RAGAS evaluation encounters an issue
-        return {
-            "precision": 0.831,
-            "recall": 0.792
-        }
+        # Graceful fallback: compute metrics locally instead of returning fake values
+        return _compute_local_metrics(query)

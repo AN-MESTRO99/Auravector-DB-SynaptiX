@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import streamlit as st
+import streamlit.components.v1 as components
 import numpy as np
 import umap
 import plotly.express as px
@@ -9,16 +10,12 @@ from backend import MathematicalVectorEngine, HybridRetrievalPipeline, run_laten
 # Load environment variables
 load_dotenv()
 
-# Manage sidebar open/closed state via Session State
-if "sidebar_state" not in st.session_state:
-    st.session_state["sidebar_state"] = "collapsed"
-
-# Page Configuration - bound dynamically to session state
+# Page Configuration - Start collapsed by default
 st.set_page_config(
     page_title="AuraVector DB | High-Precision Vector Engine",
     page_icon="⚡",
     layout="wide",
-    initial_sidebar_state=st.session_state["sidebar_state"]
+    initial_sidebar_state="collapsed"
 )
 
 # Light Theme & Header CSS Fixes
@@ -159,12 +156,21 @@ def initialize_system():
 
 engine, pipeline, svd_dims = initialize_system()
 
-# Helper Callbacks to toggle sidebar safely without fragile JS hacks
-def open_sidebar():
-    st.session_state["sidebar_state"] = "expanded"
-
-def close_sidebar():
-    st.session_state["sidebar_state"] = "collapsed"
+# Helper JavaScript execution functions to trigger native sidebar toggle
+def trigger_sidebar_toggle():
+    components.html("""
+    <script>
+        const doc = window.parent.document;
+        // Search across all known Streamlit sidebar button selectors
+        const btn = doc.querySelector('button[data-testid="stSidebarCollapseButton"]') 
+                 || doc.querySelector('button[aria-label="Expand sidebar"]')
+                 || doc.querySelector('button[aria-label="Close sidebar"]')
+                 || doc.querySelector('section[data-testid="stSidebar"] button');
+        if (btn) {
+            btn.click();
+        }
+    </script>
+    """, height=0, width=0)
 
 # Application Header Bar
 head_col1, head_col2 = st.columns([3.2, 1])
@@ -179,20 +185,18 @@ with head_col1:
 
 with head_col2:
     st.write("") # Alignment spacer
-    # Native Streamlit callback button to toggle sidebar
-    if st.session_state["sidebar_state"] == "collapsed":
-        st.button("🎛️ Control Panel", type="primary", use_container_width=True, on_click=open_sidebar)
-    else:
-        st.button("❌ Close Panel", type="secondary", use_container_width=True, on_click=close_sidebar)
+    if st.button("🎛️ Control Panel", type="primary", use_container_width=True):
+        trigger_sidebar_toggle()
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 # Native Sidebar Control Panel Drawer
 with st.sidebar:
-    st.subheader("🎛️ Engine Control Panel")
+    st.subheader("🎛️️ Engine Control Panel")
     st.caption("Configure retrieval algorithms, metadata filters, and corpus mutations.")
     
-    st.button("❌ Close Control Panel", use_container_width=True, on_click=close_sidebar)
+    if st.button("❌ Close Control Panel", use_container_width=True):
+        trigger_sidebar_toggle()
 
     st.markdown("---")
     
@@ -233,7 +237,7 @@ with st.sidebar:
 
     with mutation_tab_delete:
         del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
-        if st.button("🗑️️ Delete Passage", type="primary", use_container_width=True):
+        if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
             if hasattr(engine, "delete_passage"):
                 success = engine.delete_passage(del_id)
                 if success:

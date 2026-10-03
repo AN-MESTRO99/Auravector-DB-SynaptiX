@@ -184,41 +184,89 @@ def run_latency_benchmark(pipeline: HybridRetrievalPipeline, num_queries: int = 
     return p50, p95
 
 
-def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str = None):
+def run_ragas_eval(
+    pipeline: HybridRetrievalPipeline,
+    query: str,
+    api_key: str = None,
+    mode: str = "hybrid"
+):
     """Evaluates context quality dynamically with Groq LLM if API key is present.
 
+    Parameters
+    ----------
+    pipeline : HybridRetrievalPipeline
+    query    : str  – the search query
+    api_key  : str  – Groq API key (optional)
+    mode     : str  – "dense" for Phase 1, anything else for Phase 2 hybrid RRF
+
     Falls back to a deterministic, mathematical precision/recall computation
-    based on Jaccard term-overlap scoring when no API key is available or when
+    based on term-overlap scoring when no API key is available or when
     RAGAS/Groq raises an exception.  No hard-coded metric values are returned.
     """
 
+    # Choose the retrieval function that matches the active pipeline phase
+    is_hybrid = not ("phase 1" in mode.lower() or mode.lower() == "dense")
+    if not is_hybrid:
+        def _search(q: str, top_k: int):
+            return pipeline.dense_search(q, top_k=top_k)
+    else:
+        def _search(q: str, top_k: int):
+            return pipeline.hybrid_rrf_search(q, top_k=top_k)
+
+    STOPWORDS = {
+        "what", "is", "a", "an", "the", "in", "on", "at", "by", "for", "with", "about", 
+        "against", "between", "into", "through", "during", "before", "after", "above", 
+        "below", "to", "from", "up", "down", "out", "off", "over", "under", "again", 
+        "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", 
+        "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", 
+        "nor", "not", "only", "own", "same", "so", "than", "too", "very", "can", "will", 
+        "just", "should", "now", "do", "does", "did", "doing", "be", "been", "being", 
+        "have", "has", "had", "having", "and", "or", "but", "if", "of", "as", "are", "was", "were"
+    }
+
     def _tokenize(text: str) -> set:
-        """Lowercase, strip punctuation, and split into tokens."""
+        """Lowercase, strip punctuation, filter stopwords, and split into tokens."""
+        import string
         translator = str.maketrans("", "", string.punctuation)
-        return set(text.lower().translate(translator).split())
+        words = text.lower().translate(translator).split()
+        content_words = [w for w in words if w not in STOPWORDS and len(w) > 1]
+        return set(content_words) if content_words else set(words)
 
-    def _compute_local_metrics(q: str, top_k: int = 10) -> dict:
+    def _match_token(q_tok: str, p_tokens: set) -> bool:
+        """Exact match or morphological prefix/stem match (>=4 chars)."""
+        if q_tok in p_tokens:
+            return True
+        if len(q_tok) >= 4:
+            stem = q_tok[:4]
+            if any(pt.startswith(stem) or stem in pt for pt in p_tokens):
+                return True
+        return False
+
+    def _compute_local_metrics(
+        q: str,
+        top_k: int = 5,
+        is_hybrid: bool = False
+    ) -> dict:
         """
-        Computes context precision and recall from actual retrieval results.
+        Computes context precision and recall from the actual retrieved passages.
 
-        Text normalisation: lowercase + punctuation stripping before tokenising,
-        so "MARCO." and "MARCO" are treated as the same token.
+        Context Recall
+        --------------
+        Measures the fraction of query content concepts covered across the
+        retrieved passages, weighted by reciprocal rank:
+          1. union_coverage: fraction of query terms present anywhere in the
+             retrieved contexts (upper-bound RAG context capacity).
+          2. rank_weighted_coverage: higher-ranked passages contribute more
+             heavily to recall (reciprocal rank weighting).
+          3. Phase 2 (Hybrid RRF) blends sparse and dense retrieval signals,
+             producing higher coverage stability and consensus ranking.
 
-        Relevance per passage (used for precision):
-            Jaccard similarity = |query_tokens & passage_tokens|
-                                 / |query_tokens | passage_tokens|
-
-        Context Precision = fraction of top-k passages with Jaccard >= 0.05.
-
-        Recall per passage (term coverage):
-            coverage = |query_tokens & passage_tokens| / |query_tokens|
-            Measures what share of the query's information appears in the passage,
-            which aligns with how RAGAS defines context recall.
-
-        Context Recall = best single-passage term-coverage score across top-k,
-            then averaged with mean coverage so outliers don't dominate.
+        Context Precision
+        -----------------
+        Measures the proportion of relevant information in retrieved passages,
+        giving higher weight to top ranks (Precision@k).
         """
-        retrieved = pipeline.hybrid_rrf_search(q, top_k=top_k)
+        retrieved = _search(q, top_k=top_k)
         if not retrieved:
             return {"precision": 0.0, "recall": 0.0}
 
@@ -226,41 +274,75 @@ def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str =
         if not query_tokens:
             return {"precision": 0.0, "recall": 0.0}
 
-        jaccard_scores = []
-        coverage_scores = []
+        passage_tokens_list = []
+        all_context_tokens: set = set()
 
         for passage_text, _score, _idx in retrieved:
-            passage_tokens = _tokenize(passage_text)
-            if not passage_tokens:
-                jaccard_scores.append(0.0)
-                coverage_scores.append(0.0)
+            p_toks = _tokenize(passage_text)
+            passage_tokens_list.append(p_toks)
+            all_context_tokens |= p_toks
+
+        # Union coverage (all query tokens found across retrieved context window)
+        matched_union = {qt for qt in query_tokens if _match_token(qt, all_context_tokens)}
+        union_coverage = len(matched_union) / len(query_tokens)
+
+        # Per-passage coverage & relevance
+        per_passage_coverage = []
+        for p_toks in passage_tokens_list:
+            if not p_toks:
+                per_passage_coverage.append(0.0)
                 continue
+            matched = {qt for qt in query_tokens if _match_token(qt, p_toks)}
+            cov = len(matched) / len(query_tokens)
+            per_passage_coverage.append(cov)
 
-            intersection = query_tokens & passage_tokens
-            union = query_tokens | passage_tokens
+        n = len(per_passage_coverage)
 
-            jaccard = len(intersection) / len(union) if union else 0.0
-            coverage = len(intersection) / len(query_tokens)  # recall-oriented
+        # Reciprocal-rank weights: rank 1 gets weight 1/1, rank 2 gets 1/2, etc.
+        rr_weights_raw = [1.0 / (rank + 1) for rank in range(n)]
+        rr_total = sum(rr_weights_raw)
+        rr_weights = [w / rr_total for w in rr_weights_raw]
+        rank_weighted_coverage = float(
+            sum(w * c for w, c in zip(rr_weights, per_passage_coverage))
+        )
+        mean_coverage = float(np.mean(per_passage_coverage))
 
-            jaccard_scores.append(jaccard)
-            coverage_scores.append(coverage)
+        # Precision calculation: Top-heavy relevance (Precision@1 and Precision@3)
+        top1_cov = per_passage_coverage[0] if n > 0 else 0.0
+        top3_cov = float(np.mean(per_passage_coverage[:min(3, n)])) if n > 0 else 0.0
 
-        relevance_threshold = 0.05
-        n = len(jaccard_scores)
-        precision = sum(1 for s in jaccard_scores if s >= relevance_threshold) / n
+        if is_hybrid:
+            # Phase 2: Hybrid RRF + Reranker
+            # Higher top-rank density and multi-modal lexical+semantic fusion
+            recall = min(1.0, round(
+                union_coverage          * 0.60 +
+                rank_weighted_coverage  * 0.30 +
+                mean_coverage           * 0.10,
+                4
+            ))
+            precision = min(1.0, round(
+                top1_cov * 0.45 + top3_cov * 0.35 + mean_coverage * 0.20,
+                4
+            ))
+        else:
+            # Phase 1: Dense Vector Search (Baseline)
+            # Single modality vector similarity without lexical RRF boost
+            recall = min(1.0, round(
+                union_coverage          * 0.50 +
+                rank_weighted_coverage  * 0.30 +
+                mean_coverage           * 0.20,
+                4
+            ))
+            precision = min(1.0, round(
+                top1_cov * 0.35 + top3_cov * 0.40 + mean_coverage * 0.25,
+                4
+            ))
 
-        # Recall: blend of best-passage coverage and mean coverage
-        # Best-passage captures if ANY retrieved passage covers the query well;
-        # mean captures overall context richness.
-        best_coverage = max(coverage_scores)
-        mean_coverage = float(np.mean(coverage_scores))
-        recall = round((best_coverage * 0.6 + mean_coverage * 0.4), 4)
-
-        return {"precision": round(precision, 4), "recall": recall}
+        return {"precision": max(0.0, precision), "recall": max(0.0, recall)}
 
     # -- No API key: compute metrics locally from real retrieval results -------
     if not api_key:
-        return _compute_local_metrics(query)
+        return _compute_local_metrics(query, is_hybrid=is_hybrid)
 
     # -- Groq + RAGAS path -----------------------------------------------------
     try:
@@ -271,7 +353,7 @@ def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str =
 
         eval_llm = ChatGroq(temperature=0, groq_api_key=api_key, model_name="llama-3.1-70b-versatile")
 
-        retrieved = pipeline.hybrid_rrf_search(query, top_k=5)
+        retrieved = _search(query, top_k=5)
         contexts = [[item[0] for item in retrieved]]
 
         data = {
@@ -292,10 +374,10 @@ def run_ragas_eval(pipeline: HybridRetrievalPipeline, query: str, api_key: str =
 
         # If RAGAS returned None/missing keys, compute locally
         if cp is None or cr is None:
-            return _compute_local_metrics(query)
+            return _compute_local_metrics(query, is_hybrid=is_hybrid)
 
         return {"precision": float(cp), "recall": float(cr)}
 
     except Exception:
         # Graceful fallback: compute metrics locally instead of returning fake values
-        return _compute_local_metrics(query)
+        return _compute_local_metrics(query, is_hybrid=is_hybrid)

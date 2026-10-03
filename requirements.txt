@@ -1,0 +1,12 @@
+streamlit
+qdrant-client
+sentence-transformers
+rank-bm25
+pandas
+numpy
+scipy
+umap-learn
+plotly
+torch
+scikit-learn
+datasets

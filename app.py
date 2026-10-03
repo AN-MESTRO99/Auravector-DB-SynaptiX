@@ -1,7 +1,6 @@
 import os
 from dotenv import load_dotenv
 import streamlit as st
-import streamlit.components.v1 as components
 import numpy as np
 import umap
 import plotly.express as px
@@ -10,31 +9,27 @@ from backend import MathematicalVectorEngine, HybridRetrievalPipeline, run_laten
 # Load environment variables
 load_dotenv()
 
-# Page Configuration - Start collapsed by default
+# Manage sidebar open/closed state via Session State
+if "sidebar_state" not in st.session_state:
+    st.session_state["sidebar_state"] = "collapsed"
+
+# Page Configuration - bound dynamically to session state
 st.set_page_config(
     page_title="AuraVector DB | High-Precision Vector Engine",
     page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state=st.session_state["sidebar_state"]
 )
 
 # Light Theme & Header CSS Fixes
 st.markdown("""
 <style>
-    /* Prevent title clipping by setting container padding */
     .block-container {
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
         max-width: 1250px;
     }
 
-    /* Hide standard top left sidebar expand/collapse chevron arrow entirely */
-    [data-testid="stSidebarCollapseButton"], 
-    button[data-testid="baseButton-headerNoPadding"] {
-        display: none !important;
-    }
-
-    /* Custom Header Bar Styling */
     .app-title {
         font-weight: 800;
         font-size: 2.1rem;
@@ -53,7 +48,6 @@ st.markdown("""
         font-weight: 500;
     }
 
-    /* KPI Metrics Styling */
     .metric-card {
         background: #FFFFFF;
         border: 1px solid #E2E8F0;
@@ -83,7 +77,6 @@ st.markdown("""
         margin-bottom: 6px;
     }
 
-    /* Passage Result Cards */
     .passage-card {
         background: #FFFFFF;
         border-radius: 10px;
@@ -111,13 +104,11 @@ st.markdown("""
         margin-bottom: 12px;
     }
 
-    /* Sidebar Drawer Styling Override */
     [data-testid="stSidebar"] {
         background-color: #FFFFFF !important;
         border-left: 1px solid #E2E8F0 !important;
     }
 
-    /* Input & Tab Controls */
     .stTextInput input, .stTextArea textarea, .stSelectbox > div {
         background-color: #FFFFFF !important;
         color: #0F172A !important;
@@ -168,6 +159,13 @@ def initialize_system():
 
 engine, pipeline, svd_dims = initialize_system()
 
+# Helper Callbacks to toggle sidebar safely without fragile JS hacks
+def open_sidebar():
+    st.session_state["sidebar_state"] = "expanded"
+
+def close_sidebar():
+    st.session_state["sidebar_state"] = "collapsed"
+
 # Application Header Bar
 head_col1, head_col2 = st.columns([3.2, 1])
 
@@ -181,29 +179,11 @@ with head_col1:
 
 with head_col2:
     st.write("") # Alignment spacer
-    # Clicking "Control Panel" directly opens/expands the sidebar drawer
-    if st.button("🎛️ Control Panel", type="primary", use_container_width=True):
-        components.html(
-            """
-            <script>
-                const parentDoc = window.parent.document;
-                const sidebar = parentDoc.querySelector('section[data-testid="stSidebar"]');
-                const isCollapsed = sidebar ? sidebar.getAttribute('aria-expanded') === 'false' : true;
-                
-                if (isCollapsed) {
-                    // Query native expand controls and trigger click
-                    const expandButton = parentDoc.querySelector('button[data-testid="stSidebarCollapseButton"]') 
-                                      || parentDoc.querySelector('button[aria-label="Expand sidebar"]')
-                                      || parentDoc.querySelector('[data-testid="baseButton-headerNoPadding"]');
-                    if (expandButton) {
-                        expandButton.click();
-                    }
-                }
-            </script>
-            """,
-            height=0,
-            width=0
-        )
+    # Native Streamlit callback button to toggle sidebar
+    if st.session_state["sidebar_state"] == "collapsed":
+        st.button("🎛️ Control Panel", type="primary", use_container_width=True, on_click=open_sidebar)
+    else:
+        st.button("❌ Close Panel", type="secondary", use_container_width=True, on_click=close_sidebar)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -212,23 +192,7 @@ with st.sidebar:
     st.subheader("🎛️ Engine Control Panel")
     st.caption("Configure retrieval algorithms, metadata filters, and corpus mutations.")
     
-    # Close button directly triggers sidebar collapse via JS
-    if st.button("❌ Close Control Panel", use_container_width=True):
-        components.html(
-            """
-            <script>
-                const parentDoc = window.parent.document;
-                const collapseButton = parentDoc.querySelector('button[data-testid="stSidebarCollapseButton"]') 
-                                       || parentDoc.querySelector('button[aria-label="Close sidebar"]')
-                                       || parentDoc.querySelector('[data-testid="baseButton-headerNoPadding"]');
-                if (collapseButton) {
-                    collapseButton.click();
-                }
-            </script>
-            """,
-            height=0,
-            width=0
-        )
+    st.button("❌ Close Control Panel", use_container_width=True, on_click=close_sidebar)
 
     st.markdown("---")
     
@@ -269,7 +233,7 @@ with st.sidebar:
 
     with mutation_tab_delete:
         del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
-        if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
+        if st.button("🗑️️ Delete Passage", type="primary", use_container_width=True):
             if hasattr(engine, "delete_passage"):
                 success = engine.delete_passage(del_id)
                 if success:

@@ -66,7 +66,7 @@ class MathematicalVectorEngine:
         all_dicts = [
             {"id": self.doc_ids[i], "text": self.doc_passages[i], "category": self.doc_categories[i]}
             for i in range(len(self.doc_passages))
-            if self.doc_ids[i] != doc_id  # Replace if ID exists
+            if self.doc_ids[i] != doc_id
         ]
         all_dicts.append({"id": doc_id, "text": text, "category": category})
         self.ingest_and_index(all_dicts)

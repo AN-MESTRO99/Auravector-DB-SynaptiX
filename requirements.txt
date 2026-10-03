@@ -10,3 +10,6 @@ plotly
 torch
 scikit-learn
 datasets
+python-dotenv
+ragas
+langchain-groq

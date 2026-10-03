@@ -17,13 +17,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Premium Dark Theme CSS Overrides
+# Modern Light Theme CSS Overrides
 st.markdown("""
 <style>
-    /* Dark Theme Core Background Override */
+    /* Light Theme Core Background Override */
     .stAppViewContainer, .stApp {
-        background-color: #090D16 !important;
-        color: #F1F5F9;
+        background-color: #F8FAFC !important;
+        color: #0F172A;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
@@ -39,24 +39,24 @@ st.markdown("""
         display: flex;
         justify-content: space-between;
         align-items: center;
-        background: linear-gradient(135deg, #131C2E 0%, #0F172A 100%);
+        background: #FFFFFF;
         padding: 18px 28px;
         border-radius: 12px;
-        border: 1px solid #1E293B;
+        border: 1px solid #E2E8F0;
         margin-bottom: 20px;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
     .app-title {
         font-weight: 800;
         font-size: 1.9rem;
-        background: linear-gradient(90deg, #818CF8 0%, #34D399 100%);
+        background: linear-gradient(90deg, #4F46E5 0%, #059669 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 0;
         letter-spacing: -0.5px;
     }
     .app-subtitle {
-        color: #94A3B8;
+        color: #64748B;
         font-size: 0.85rem;
         margin-top: 2px;
         font-weight: 500;
@@ -64,23 +64,23 @@ st.markdown("""
 
     /* KPI Metrics Styling */
     .metric-card {
-        background: #131C2E;
-        border: 1px solid #1E293B;
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
         border-radius: 12px;
         padding: 16px;
         text-align: center;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         transition: all 0.25s ease-in-out;
     }
     .metric-card:hover {
         border-color: #6366F1;
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(99, 102, 241, 0.15);
+        box-shadow: 0 8px 16px rgba(99, 102, 241, 0.08);
     }
     .metric-value {
         font-size: 1.7rem;
         font-weight: 800;
-        color: #34D399;
+        color: #059669;
         letter-spacing: -0.5px;
     }
     .metric-label {
@@ -94,24 +94,24 @@ st.markdown("""
 
     /* Search Passage Cards */
     .passage-card {
-        background: #131C2E;
+        background: #FFFFFF;
         border-radius: 10px;
         padding: 20px;
-        border-left: 4px solid #6366F1;
-        border-top: 1px solid #1E293B;
-        border-right: 1px solid #1E293B;
-        border-bottom: 1px solid #1E293B;
+        border-left: 4px solid #4F46E5;
+        border-top: 1px solid #E2E8F0;
+        border-right: 1px solid #E2E8F0;
+        border-bottom: 1px solid #E2E8F0;
         margin-bottom: 14px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.25);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
     }
     .passage-card-hybrid { 
-        border-left-color: #34D399; 
+        border-left-color: #059669; 
     }
     
     .score-badge {
-        background-color: #1E293B;
-        color: #38BDF8;
-        border: 1px solid #334155;
+        background-color: #F1F5F9;
+        color: #0284C7;
+        border: 1px solid #CBD5E1;
         font-size: 0.75rem;
         font-weight: 600;
         padding: 4px 12px;
@@ -120,35 +120,35 @@ st.markdown("""
         margin-bottom: 12px;
     }
 
-    /* Sidebar Drawer Styling Override */
+    /* Sidebar Drawer Styling Override for Light Mode */
     [data-testid="stSidebar"] {
-        background-color: #0D1322 !important;
-        border-left: 1px solid #1E293B !important;
+        background-color: #FFFFFF !important;
+        border-left: 1px solid #E2E8F0 !important;
     }
     [data-testid="stSidebar"] * {
-        color: #E2E8F0 !important;
+        color: #0F172A !important;
     }
 
-    /* Custom Input and Tab Styling for Dark Mode */
+    /* Input & Tab Controls */
     .stTextInput input, .stTextArea textarea, .stSelectbox > div {
-        background-color: #131C2E !important;
-        color: #F8FAFC !important;
-        border: 1px solid #334155 !important;
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid #CBD5E1 !important;
         border-radius: 8px !important;
     }
     .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: #6366F1 !important;
-        box-shadow: 0 0 0 1px #6366F1 !important;
+        border-color: #4F46E5 !important;
+        box-shadow: 0 0 0 1px #4F46E5 !important;
     }
 
-    /* Tab active indicator styling */
+    /* Tab Label Styling */
     button[data-baseweb="tab"] {
-        color: #94A3B8 !important;
+        color: #64748B !important;
         font-weight: 600 !important;
     }
     button[aria-selected="true"] {
-        color: #818CF8 !important;
-        border-bottom-color: #818CF8 !important;
+        color: #4F46E5 !important;
+        border-bottom-color: #4F46E5 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -189,7 +189,7 @@ engine, pipeline, svd_dims = initialize_system()
 if "show_drawer" not in st.session_state:
     st.session_state["show_drawer"] = False
 
-# Application Dark Header Bar with Drawer Toggle Button
+# Application Light Header Bar with Drawer Toggle Button
 head_col1, head_col2 = st.columns([3.2, 1])
 
 with head_col1:
@@ -241,7 +241,7 @@ if st.session_state["show_drawer"]:
         st.markdown("---")
         st.subheader("Live Corpus Mutation (FR-5)")
 
-        mutation_tab_upsert, mutation_tab_delete = st.tabs(["➕ Upsert", "🗑️️ Delete"])
+        mutation_tab_upsert, mutation_tab_delete = st.tabs(["➕ Upsert", "🗑 Delete"])
 
         with mutation_tab_upsert:
             new_id = st.text_input("Doc ID", "ms_marco_999", key="upsert_id_input")
@@ -276,7 +276,7 @@ k1, k2, k3, k4 = st.columns(4)
 with k1: 
     st.markdown('<div class="metric-card"><div class="metric-label">Index Scale</div><div class="metric-value">100,000+</div></div>', unsafe_allow_html=True)
 with k2: 
-    st.markdown('<div class="metric-card"><div class="metric-label">Target p95 Latency</div><div class="metric-value" style="color:#818CF8;">< 300 ms</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="metric-card"><div class="metric-label">Target p95 Latency</div><div class="metric-value" style="color:#4F46E5;">< 300 ms</div></div>', unsafe_allow_html=True)
 with k3: 
     st.markdown('<div class="metric-card"><div class="metric-label">Context Precision</div><div class="metric-value">0.831</div></div>', unsafe_allow_html=True)
 with k4: 
@@ -332,7 +332,7 @@ with tab_search:
                         f"""
                         <div class="{card_class}">
                             <div class="score-badge">Rank #{idx+1} • Score: {score:.4f}</div>
-                            <div style="color: #E2E8F0; font-size: 0.95rem; line-height: 1.5;">{text}</div>
+                            <div style="color: #334155; font-size: 0.95rem; line-height: 1.5;">{text}</div>
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -389,8 +389,8 @@ with tab_umap:
         fig = px.scatter(
             x=projected[:, 0], y=projected[:, 1],
             color=colors, hover_name=labels,
-            color_discrete_map={"Query Vector": "#F87171", "Top Candidates": "#34D399", "Unselected Corpus": "#334155"},
-            template="plotly_dark"
+            color_discrete_map={"Query Vector": "#EF4444", "Top Candidates": "#059669", "Unselected Corpus": "#94A3B8"},
+            template="plotly_white"
         )
         fig.update_layout(
             height=500, 

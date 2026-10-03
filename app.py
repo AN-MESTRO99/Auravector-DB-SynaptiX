@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import streamlit as st
+import streamlit.components.v1 as components
 import numpy as np
 import umap
 import plotly.express as px
@@ -9,56 +10,61 @@ from backend import MathematicalVectorEngine, HybridRetrievalPipeline, run_laten
 # Load environment variables
 load_dotenv()
 
-# Page Configuration
+# Initialize sidebar state session key
+if "sidebar_expanded" not in st.session_state:
+    st.session_state["sidebar_expanded"] = False
+
+# Page Configuration dynamically tied to session state
 st.set_page_config(
     page_title="AuraVector DB | High-Precision Vector Engine",
     page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded" if st.session_state["sidebar_expanded"] else "collapsed"
 )
 
-# Modern Light Theme CSS Overrides
+# Light Theme & Header CSS Fixes
 st.markdown("""
 <style>
-    /* Light Theme Core Background Override */
-    .stAppViewContainer, .stApp {
-        background-color: #F8FAFC !important;
-        color: #0F172A;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    
-    /* Container Padding */
+    /* Adjust container top padding to prevent title clipping */
     .block-container {
-        padding-top: 1.5rem;
-        padding-bottom: 2rem;
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
         max-width: 1250px;
     }
 
-    /* Custom Header Bar */
+    /* Hide standard sidebar collapse chevron when user wants clean header-only control */
+    [data-testid="stSidebarNav"] {
+        padding-top: 10px;
+    }
+
+    /* Custom Header Bar Container */
     .app-header-container {
         display: flex;
         justify-content: space-between;
         align-items: center;
         background: #FFFFFF;
-        padding: 18px 28px;
+        padding: 20px 28px;
         border-radius: 12px;
         border: 1px solid #E2E8F0;
         margin-bottom: 20px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
+
     .app-title {
         font-weight: 800;
-        font-size: 1.9rem;
+        font-size: 2rem;
+        line-height: 1.2;
         background: linear-gradient(90deg, #4F46E5 0%, #059669 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 0;
+        padding-top: 4px;
         letter-spacing: -0.5px;
     }
     .app-subtitle {
         color: #64748B;
         font-size: 0.85rem;
-        margin-top: 2px;
+        margin-top: 4px;
         font-weight: 500;
     }
 
@@ -120,13 +126,10 @@ st.markdown("""
         margin-bottom: 12px;
     }
 
-    /* Sidebar Drawer Styling Override for Light Mode */
+    /* Sidebar Drawer Styling Override */
     [data-testid="stSidebar"] {
         background-color: #FFFFFF !important;
         border-left: 1px solid #E2E8F0 !important;
-    }
-    [data-testid="stSidebar"] * {
-        color: #0F172A !important;
     }
 
     /* Input & Tab Controls */
@@ -136,12 +139,7 @@ st.markdown("""
         border: 1px solid #CBD5E1 !important;
         border-radius: 8px !important;
     }
-    .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: #4F46E5 !important;
-        box-shadow: 0 0 0 1px #4F46E5 !important;
-    }
 
-    /* Tab Label Styling */
     button[data-baseweb="tab"] {
         color: #64748B !important;
         font-weight: 600 !important;
@@ -185,91 +183,96 @@ def initialize_system():
 
 engine, pipeline, svd_dims = initialize_system()
 
-# State Management for Side Control Panel Trigger
-if "show_drawer" not in st.session_state:
-    st.session_state["show_drawer"] = False
-
-# Application Light Header Bar with Drawer Toggle Button
+# Application Header Bar
 head_col1, head_col2 = st.columns([3.2, 1])
 
 with head_col1:
     st.markdown("""
-        <div>
+        <div style="padding-top: 5px;">
             <div class="app-title">⚡ AuraVector DB</div>
             <div class="app-subtitle">High-Precision Vector Engine for RAG Systems • Team SynaptiX • BIT Mesra</div>
         </div>
     """, unsafe_allow_html=True)
 
 with head_col2:
-    st.write("") # Spacer
+    st.write("") # Alignment spacer
+    # Clicking this button directly toggles the native sidebar state
     if st.button("🎛️ Control Panel", type="primary", use_container_width=True):
-        st.session_state["show_drawer"] = not st.session_state["show_drawer"]
+        st.session_state["sidebar_expanded"] = not st.session_state["sidebar_expanded"]
+        # Injects JS to open/close Streamlit's native sidebar panel directly
+        components.html(
+            """
+            <script>
+                const sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
+                const button = window.parent.document.querySelector('button[data-testid="baseButton-headerNoPadding"]');
+                if (button) {
+                    button.click();
+                }
+            </script>
+            """,
+            height=0,
+        )
+        st.rerun()
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Slide-Out Side Control Panel Drawer
-if st.session_state["show_drawer"]:
-    with st.sidebar:
-        st.subheader("🎛️ Engine Control Panel")
-        st.caption("Configure retrieval algorithms, metadata filters, and corpus mutations.")
-        
-        if st.button("❌ Close Panel", use_container_width=True):
-            st.session_state["show_drawer"] = False
-            st.rerun()
+# Sidebar Native Drawer Controls
+with st.sidebar:
+    st.subheader("🎛️ Engine Control Panel")
+    st.caption("Configure retrieval algorithms, metadata filters, and corpus mutations.")
+    
+    if st.button("❌ Close Control Panel", use_container_width=True):
+        st.session_state["sidebar_expanded"] = False
+        st.rerun()
 
-        st.markdown("---")
-        
-        retrieval_mode = st.radio(
-            "Search Pipeline Mode:",
-            ["Phase 1: Dense Vector Search (Baseline)", "Phase 2: Hybrid RRF Search + Reranker"]
+    st.markdown("---")
+    
+    retrieval_mode = st.radio(
+        "Search Pipeline Mode:",
+        ["Phase 1: Dense Vector Search (Baseline)", "Phase 2: Hybrid RRF Search + Reranker"]
+    )
+
+    st.markdown("---")
+    category_filter = st.selectbox("Pre-Retrieval Metadata Filter (FR-4):", [None, "tech", "finance"])
+
+    st.markdown("---")
+    if "groq_api_key" not in st.session_state:
+        st.session_state["groq_api_key"] = os.getenv("GROQ_API_KEY", "")
+
+    groq_key = st.text_input(
+        "Groq API Key", 
+        type="password",
+        key="groq_api_key",
+        help="Pre-loaded from .env if present. You can edit or override it here."
+    )
+
+    st.markdown("---")
+    st.subheader("Live Corpus Mutation (FR-5)")
+
+    mutation_tab_upsert, mutation_tab_delete = st.tabs(["➕ Upsert", "🗑 Delete"])
+
+    with mutation_tab_upsert:
+        new_id = st.text_input("Doc ID", "ms_marco_999", key="upsert_id_input")
+        new_text = st.text_area(
+            "Passage Text", 
+            "MS MARCO Passage #999: SVD dimensional entropy quantization accelerates scalar retrieval.",
+            key="upsert_text_input"
         )
+        if st.button("➕ Upsert Passage", use_container_width=True):
+            engine.upsert_passage(new_id, new_text)
+            st.success(f"Upserted document `{new_id}`!")
 
-        st.markdown("---")
-        category_filter = st.selectbox("Pre-Retrieval Metadata Filter (FR-4):", [None, "tech", "finance"])
-
-        st.markdown("---")
-        if "groq_api_key" not in st.session_state:
-            st.session_state["groq_api_key"] = os.getenv("GROQ_API_KEY", "")
-
-        groq_key = st.text_input(
-            "Groq API Key", 
-            type="password",
-            key="groq_api_key",
-            help="Pre-loaded from .env if present. You can edit or override it here."
-        )
-
-        st.markdown("---")
-        st.subheader("Live Corpus Mutation (FR-5)")
-
-        mutation_tab_upsert, mutation_tab_delete = st.tabs(["➕ Upsert", "🗑 Delete"])
-
-        with mutation_tab_upsert:
-            new_id = st.text_input("Doc ID", "ms_marco_999", key="upsert_id_input")
-            new_text = st.text_area(
-                "Passage Text", 
-                "MS MARCO Passage #999: SVD dimensional entropy quantization accelerates scalar retrieval.",
-                key="upsert_text_input"
-            )
-            if st.button("➕ Upsert Passage", use_container_width=True):
-                engine.upsert_passage(new_id, new_text)
-                st.success(f"Upserted document `{new_id}`!")
-
-        with mutation_tab_delete:
-            del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
-            if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
-                if hasattr(engine, "delete_passage"):
-                    success = engine.delete_passage(del_id)
-                    if success:
-                        st.success(f"Successfully deleted `{del_id}`!")
-                    else:
-                        st.error(f"Document `{del_id}` not found in index.")
+    with mutation_tab_delete:
+        del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
+        if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
+            if hasattr(engine, "delete_passage"):
+                success = engine.delete_passage(del_id)
+                if success:
+                    st.success(f"Successfully deleted `{del_id}`!")
                 else:
-                    st.error("`delete_passage` method missing from engine backend.")
-else:
-    # Default settings when panel is toggled off
-    retrieval_mode = "Phase 1: Dense Vector Search (Baseline)"
-    category_filter = None
-    groq_key = os.getenv("GROQ_API_KEY", "")
+                    st.error(f"Document `{del_id}` not found in index.")
+            else:
+                st.error("`delete_passage` method missing from engine backend.")
 
 # Key Performance Indicators
 k1, k2, k3, k4 = st.columns(4)

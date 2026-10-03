@@ -347,32 +347,32 @@ with tab_benchmark:
     
     st.markdown("<br>", unsafe_allow_html=True)
         if st.button("▶ Run Full System Benchmark Suite", type="primary"):
-        with st.spinner("Executing benchmarks..."):
-            bench_query = query if query else "What is MS MARCO passage ranking?"
-            p50, p95 = run_latency_benchmark(pipeline)
-            eval_res = run_ragas_eval(pipeline, bench_query, groq_key,
-                                      category_filter=category_filter, mode=mode_key)
-
-            lat_ok = p95 < 300
-            prec_ok = eval_res["precision"] > 0.75
-            rec_ok = eval_res["recall"] > 0.70
-
-            m1, m2, m3, m4 = st.columns(4)
-            with m1:
-                st.metric("Median Latency (p50)", f"{p50:.2f} ms")
-            with m2:
-                st.metric("Tail Latency (p95)", f"{p95:.2f} ms",
-                          delta="PASSED (<300ms)" if lat_ok else "FAILED (>=300ms)",
-                          delta_color="normal" if lat_ok else "inverse")
-            with m3:
-                st.metric("Context Precision", f"{eval_res['precision']:.4f}",
-                          delta="PASSED (>0.75)" if prec_ok else "BELOW TARGET (0.75)",
-                          delta_color="normal" if prec_ok else "inverse")
-            with m4:
-                st.metric("Context Recall", f"{eval_res['recall']:.4f}",
-                          delta="PASSED (>0.70)" if rec_ok else "BELOW TARGET (0.70)",
-                          delta_color="normal" if rec_ok else "inverse")
-            st.caption(f"Metric source: {eval_res['source']}")
+          with st.spinner("Executing benchmarks..."):
+              bench_query = query if query else "What is MS MARCO passage ranking?"
+              p50, p95 = run_latency_benchmark(pipeline)
+              eval_res = run_ragas_eval(pipeline, bench_query, groq_key,
+                                        category_filter=category_filter, mode=mode_key)
+  
+              lat_ok = p95 < 300
+              prec_ok = eval_res["precision"] > 0.75
+              rec_ok = eval_res["recall"] > 0.70
+  
+              m1, m2, m3, m4 = st.columns(4)
+              with m1:
+                  st.metric("Median Latency (p50)", f"{p50:.2f} ms")
+              with m2:
+                  st.metric("Tail Latency (p95)", f"{p95:.2f} ms",
+                            delta="PASSED (<300ms)" if lat_ok else "FAILED (>=300ms)",
+                            delta_color="normal" if lat_ok else "inverse")
+              with m3:
+                  st.metric("Context Precision", f"{eval_res['precision']:.4f}",
+                            delta="PASSED (>0.75)" if prec_ok else "BELOW TARGET (0.75)",
+                            delta_color="normal" if prec_ok else "inverse")
+              with m4:
+                  st.metric("Context Recall", f"{eval_res['recall']:.4f}",
+                            delta="PASSED (>0.70)" if rec_ok else "BELOW TARGET (0.70)",
+                            delta_color="normal" if rec_ok else "inverse")
+              st.caption(f"Metric source: {eval_res['source']}")
 
 # Tab 3: UMAP Topology & Nearest Neighbors Analysis
 with tab_umap:

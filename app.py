@@ -171,6 +171,12 @@ def initialize_system():
 
 engine, pipeline, svd_dims = initialize_system()
 
+# Initialise RAGAS metric placeholders in session state
+if "ragas_precision" not in st.session_state:
+    st.session_state["ragas_precision"] = None
+if "ragas_recall" not in st.session_state:
+    st.session_state["ragas_recall"] = None
+
 # JavaScript execution helper to toggle native Streamlit sidebar
 def trigger_sidebar_toggle():
     components.html("""
@@ -262,15 +268,18 @@ with st.sidebar:
                 st.error("`delete_passage` method missing from engine backend.")
 
 # Key Performance Indicators
+_precision_display = f"{st.session_state['ragas_precision']:.3f}" if st.session_state["ragas_precision"] is not None else "—"
+_recall_display    = f"{st.session_state['ragas_recall']:.3f}"    if st.session_state["ragas_recall"]    is not None else "—"
+
 k1, k2, k3, k4 = st.columns(4)
 with k1: 
     st.markdown('<div class="metric-card"><div class="metric-label">Index Scale</div><div class="metric-value">100,000+</div></div>', unsafe_allow_html=True)
 with k2: 
     st.markdown('<div class="metric-card"><div class="metric-label">Target p95 Latency</div><div class="metric-value">< 300 ms</div></div>', unsafe_allow_html=True)
 with k3: 
-    st.markdown('<div class="metric-card"><div class="metric-label">Context Precision</div><div class="metric-value">0.831</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Context Precision</div><div class="metric-value">{_precision_display}</div></div>', unsafe_allow_html=True)
 with k4: 
-    st.markdown('<div class="metric-card"><div class="metric-label">Context Recall</div><div class="metric-value">0.792</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-card"><div class="metric-label">Context Recall</div><div class="metric-value">{_recall_display}</div></div>', unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -345,7 +354,11 @@ with tab_benchmark:
         with st.spinner("Executing benchmarks..."):
             p50, p95 = run_latency_benchmark(pipeline)
             eval_res = run_ragas_eval(pipeline, query if 'query' in locals() else "What is MS MARCO passage ranking?", groq_key)
-            
+
+            # Persist live RAGAS results so KPI cards stay up-to-date
+            st.session_state["ragas_precision"] = eval_res["precision"]
+            st.session_state["ragas_recall"]    = eval_res["recall"]
+
             m1, m2, m3, m4 = st.columns(4)
             with m1: st.metric("Median Latency (p50)", f"{p50:.2f} ms")
             with m2: st.metric("Target Latency (p95)", f"{p95:.2f} ms", delta="PASSED (<300ms)")

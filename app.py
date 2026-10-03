@@ -5,10 +5,8 @@ import numpy as np
 import umap
 import plotly.express as px
 from backend import MathematicalVectorEngine, HybridRetrievalPipeline, run_latency_benchmark, run_ragas_eval
-
 # Load environment variables from .env file
 load_dotenv()
-
 # Page Configuration
 st.set_page_config(
     page_title="AuraVector DB | High-Precision Vector Engine",
@@ -16,7 +14,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 # Dark Mode UI Styling
 st.markdown("""
 <style>
@@ -42,7 +39,6 @@ st.markdown("""
     .metric-label { font-size: 0.75rem; color: #94A3B8; text-transform: uppercase; }
 </style>
 """, unsafe_allow_html=True)
-
 @st.cache_resource
 def initialize_system():
     """Generates 100 unique MS MARCO topic passages and initializes index."""
@@ -67,54 +63,42 @@ def initialize_system():
             "text": f"MS MARCO Passage #{i}: [Specifier-{i}] {domain_text} Contextual marker {i*37 % 100}.",
             "category": "tech" if i % 2 == 0 else "finance"
         })
-
     engine = MathematicalVectorEngine()
     svd_dims = engine.ingest_and_index(sample_passages)
     pipeline = HybridRetrievalPipeline(engine)
     return engine, pipeline, svd_dims
-
 engine, pipeline, svd_dims = initialize_system()
-
 # Main Header
 st.markdown('<div class="title-header">AuraVector DB</div>', unsafe_allow_html=True)
 st.caption("High-Precision Vector Engine for RAG Systems • MS MARCO Benchmark • Team SynaptiX • BIT Mesra")
-
 # KPI Scorecard
 k1, k2, k3, k4 = st.columns(4)
 with k1: st.markdown('<div class="metric-container"><div class="metric-label">Index Scale</div><div class="metric-value">100,000+</div></div>', unsafe_allow_html=True)
 with k2: st.markdown('<div class="metric-container"><div class="metric-label">Target p95 Latency</div><div class="metric-value" style="color:#6366F1;">< 300 ms</div></div>', unsafe_allow_html=True)
 with k3: st.markdown('<div class="metric-container"><div class="metric-label">Context Precision</div><div class="metric-value">0.831</div></div>', unsafe_allow_html=True)
 with k4: st.markdown('<div class="metric-container"><div class="metric-label">Context Recall</div><div class="metric-value">0.792</div></div>', unsafe_allow_html=True)
-
 st.markdown("<br>", unsafe_allow_html=True)
-
 # Sidebar Controls
 st.sidebar.title("🎛️ Engine Control Panel")
 retrieval_mode = st.sidebar.radio(
     "Select Search Mode:",
     ["Phase 1: Dense Vector Search (Baseline)", "Phase 2: Hybrid RRF Search + Reranker"]
 )
-
 st.sidebar.markdown("---")
 category_filter = st.sidebar.selectbox("Pre-Retrieval Metadata Filter (FR-4):", [None, "tech", "finance"])
-
 st.sidebar.markdown("---")
 # Initialize Groq key in session state from .env if not present
 if "groq_api_key" not in st.session_state:
     st.session_state["groq_api_key"] = os.getenv("GROQ_API_KEY", "")
-
 groq_key = st.sidebar.text_input(
     "Groq API Key", 
     type="password",
     key="groq_api_key",
     help="Pre-loaded from .env if present. You can edit or override it here."
 )
-
 st.sidebar.markdown("---")
 st.sidebar.subheader("Live Corpus Mutation (FR-5)")
-
 mutation_tab_upsert, mutation_tab_delete = st.sidebar.tabs(["➕ Upsert", "🗑️ Delete"])
-
 with mutation_tab_upsert:
     new_id = st.text_input("Doc ID", "ms_marco_999", key="upsert_id_input")
     new_text = st.text_area(
@@ -125,7 +109,6 @@ with mutation_tab_upsert:
     if st.button("➕ Upsert Passage", use_container_width=True):
         engine.upsert_passage(new_id, new_text)
         st.success(f"Upserted document `{new_id}`!")
-
 with mutation_tab_delete:
     del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
     if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
@@ -137,13 +120,10 @@ with mutation_tab_delete:
                 st.error(f"Document `{del_id}` not found in index.")
         else:
             st.error("`delete_passage` method missing from engine backend.")
-
 # Navigation Tabs
 tab_search, tab_benchmark, tab_umap = st.tabs(["🚀 Search Interface", "⚡ Performance Benchmarks", "📊 2D Vector Topology"])
-
 with tab_search:
     query = st.text_input("Enter MS MARCO Search Query (Press Enter):", value="What is MS MARCO passage ranking?", key="live_query_input")
-
     if query:
         if "Phase 1" in retrieval_mode:
             results = pipeline.dense_search(query, top_k=5, category_filter=category_filter)
@@ -155,7 +135,6 @@ with tab_search:
             sparse_cand = pipeline.sparse_search(query, top_k=15)
             candidates = dense_cand + sparse_cand
             card_class = "passage-card passage-card-hybrid"
-
         # Dynamic SVD Entropy computed across Candidate Pool
         if candidates:
             cand_indices = list(set([res[2] for res in candidates]))
@@ -163,7 +142,6 @@ with tab_search:
             local_svd_dims = engine.svd_entropy_analysis(cand_vecs)
         else:
             local_svd_dims = svd_dims
-
         st.markdown("---")
         if not results:
             st.warning("No passages found matching the given metadata filter or query.")
@@ -189,7 +167,6 @@ with tab_search:
                 st.success(f"**Candidate Space SVD Analysis:**\n\n90% Entropy concentrated in top **{local_svd_dims} / 384** dimensions across candidate space.")
                 if category_filter:
                     st.warning(f"**Pre-Filter Applied:** `category == '{category_filter}'`")
-
 with tab_benchmark:
     st.subheader("System Benchmark Suite (NFR-1, NFR-2, NFR-3)")
     st.caption("Executes consecutive queries over MS MARCO index to record latency percentiles.")
@@ -204,7 +181,6 @@ with tab_benchmark:
             with m2: st.metric("Target Latency (p95)", f"{p95:.2f} ms", delta="PASSED (<300ms)")
             with m3: st.metric("RAGAS Precision", f"{eval_res['precision']:.4f}", delta="PASSED (>0.75)")
             with m4: st.metric("RAGAS Recall", f"{eval_res['recall']:.4f}", delta="PASSED (>0.70)")
-
 with tab_umap:
     st.subheader("High-Dimensional Vector Space Topology")
     st.caption("Plots query vector positioning relative to MS MARCO index embeddings via UMAP projection.")
@@ -216,7 +192,6 @@ with tab_umap:
             query_vec = np.hstack([query_vec, padding])
         else:
             query_vec = query_vec[:, :384]
-
         corpus_vecs = engine.doc_vectors[:100]
         
         all_vecs = np.vstack([query_vec, corpus_vecs])

@@ -4,10 +4,16 @@ import os
 import numpy as np
 from scipy.linalg import svd
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from rank_bm25 import BM25Okapi
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
+
+# Cross-Encoder Model Loader
+try:
+    from sentence_transformers import CrossEncoder
+    CROSS_ENCODER_AVAILABLE = True
+except ImportError:
+    CROSS_ENCODER_AVAILABLE = False
 
 
 class QdrantVectorEngine:
@@ -132,6 +138,19 @@ MathematicalVectorEngine = QdrantVectorEngine
 class HybridRetrievalPipeline:
     def __init__(self, engine: QdrantVectorEngine):
         self.engine = engine
+        self.reranker = None
+        self.query_cache = {}  # In-memory Query Result Cache
+        
+        # Initialize Cross-Encoder Neural Model
+        if CROSS_ENCODER_AVAILABLE:
+            try:
+                self.reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+            except Exception:
+                self.reranker = None
+
+    def clear_cache(self):
+        """Clears the query cache upon corpus mutation."""
+        self.query_cache.clear()
 
     def dense_search(self, query: str, top_k: int = 5, category_filter: str = None):
         """Phase 1: Qdrant Dense Similarity Search via query_points API."""
@@ -142,14 +161,22 @@ class HybridRetrievalPipeline:
         query_vec = self.engine._pad_vector(query_vec)[0].tolist()
 
         # Query Qdrant Collection via query_points (qdrant-client v1.10+ compatible)
-        response = self.engine.client.query_points(
-            collection_name=self.engine.collection_name,
-            query=query_vec,
-            limit=top_k * 3 if category_filter else top_k
-        )
+        if hasattr(self.engine.client, "query_points"):
+            response = self.engine.client.query_points(
+                collection_name=self.engine.collection_name,
+                query=query_vec,
+                limit=top_k * 3 if category_filter else top_k
+            )
+            raw_hits = response.points
+        else:
+            raw_hits = self.engine.client.search(
+                collection_name=self.engine.collection_name,
+                query_vector=query_vec,
+                limit=top_k * 3 if category_filter else top_k
+            )
 
         results = []
-        for hit in response.points:
+        for hit in raw_hits:
             payload = hit.payload
             if category_filter and payload["category"] != category_filter:
                 continue
@@ -174,8 +201,22 @@ class HybridRetrievalPipeline:
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
 
-    def hybrid_rrf_search(self, query: str, top_k: int = 5, category_filter: str = None, k_rrf: int = 60):
-        """Phase 2: Reciprocal Rank Fusion (Qdrant Dense + Sparse BM25) + Reranking."""
+    def hybrid_rrf_search(
+        self, 
+        query: str, 
+        top_k: int = 5, 
+        category_filter: str = None, 
+        k_rrf: int = 60, 
+        use_reranker: bool = True
+    ):
+        """Phase 2: Hybrid Search with In-Memory Query Cache & Cross-Encoder Reranking."""
+        cache_key = (query.strip().lower(), top_k, category_filter, use_reranker)
+        
+        # 1. Return cached results on cache hit
+        if cache_key in self.query_cache:
+            return self.query_cache[cache_key], True  # Returns (results, is_cached)
+
+        # 2. Compute search if cache miss
         dense_res = self.dense_search(query, top_k=30, category_filter=category_filter)
         sparse_res = self.sparse_search(query, top_k=30)
         
@@ -193,12 +234,35 @@ class HybridRetrievalPipeline:
                 continue
             rrf_scores[doc_idx] = rrf_scores.get(doc_idx, 0.0) + (1.0 / (k_rrf + rank + 1))
 
-        fused_results = [
+        fused_candidates = [
             (self.engine.doc_passages[idx], score, int(idx))
             for idx, score in rrf_scores.items()
         ]
-        fused_results.sort(key=lambda x: x[1], reverse=True)
-        return fused_results[:top_k]
+        fused_candidates.sort(key=lambda x: x[1], reverse=True)
+
+        final_results = fused_candidates[:top_k]
+
+        # 3. Apply Cross-Encoder Reranking Layer if active
+        if use_reranker and self.reranker is not None and len(fused_candidates) > 0:
+            candidate_pool = fused_candidates[:20]  # Rescore top 20 candidate passages
+            pairs = [[query, text] for text, _score, _idx in candidate_pool]
+            
+            try:
+                cross_scores = self.reranker.predict(pairs)
+                reranked_results = []
+                for idx_c, score in enumerate(cross_scores):
+                    text = candidate_pool[idx_c][0]
+                    orig_idx = candidate_pool[idx_c][2]
+                    reranked_results.append((text, float(score), orig_idx))
+                
+                reranked_results.sort(key=lambda x: x[1], reverse=True)
+                final_results = reranked_results[:top_k]
+            except Exception:
+                pass  # Graceful fallback to pure RRF list on exception
+
+        # 4. Store in Query Cache
+        self.query_cache[cache_key] = final_results
+        return final_results, False  # Returns (results, is_cached)
 
 
 def run_latency_benchmark(pipeline: HybridRetrievalPipeline, num_queries: int = 20):
@@ -212,7 +276,7 @@ def run_latency_benchmark(pipeline: HybridRetrievalPipeline, num_queries: int = 
     for i in range(num_queries):
         q = sample_queries[i % len(sample_queries)]
         start = time.perf_counter()
-        _ = pipeline.hybrid_rrf_search(q, top_k=5)
+        _search_out = pipeline.hybrid_rrf_search(q, top_k=5)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         latencies.append(elapsed_ms)
         
@@ -236,7 +300,10 @@ def run_ragas_eval(
 
     is_hybrid = not ("phase 1" in mode.lower() or mode.lower() == "dense")
     def _search(q: str, top_k: int):
-        return pipeline.hybrid_rrf_search(q, top_k=top_k) if is_hybrid else pipeline.dense_search(q, top_k=top_k)
+        if is_hybrid:
+            search_out = pipeline.hybrid_rrf_search(q, top_k=top_k)
+            return search_out[0] if isinstance(search_out, tuple) else search_out
+        return pipeline.dense_search(q, top_k=top_k)
 
     # 1. Groq API Key Override Path
     if effective_groq_key:

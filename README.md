@@ -27,7 +27,7 @@ AuraVector DB resolves these failure modes through a multi-stage hybrid retrieva
 * **Dense & Sparse Hybrid Dual-Retrieval:** Combines high-dimensional dense vector space candidate generation with exact lexical matching via `Rank-BM25`.
 * **Reciprocal Rank Fusion (RRF) (FR-3):** Merges dense and sparse score ranks using $RRF(d) = \sum \frac{1}{k + \text{rank}(d)}$ (with $k = 60$).
 * **Neural Cross-Encoder Reranking:** Rescores top candidates using `ms-marco-MiniLM-L-6-v2` cross-attention to evaluate full query-document joint relevance.
-* **Dimensional Entropy & Topology Analysis:** Computes SVD cumulative variance metrics to measure dimensional density across top candidate sets[cite: 1, 3].
+* **Dimensional Entropy & Topology Analysis:** Computes SVD cumulative variance metrics to measure dimensional density across top candidate sets.
 
 ### System Architecture Flow
 <img width="3353" height="5819" alt="RAG Retrieval Pipeline for-2026-10-04-031737" src="https://github.com/user-attachments/assets/fe95801e-1057-469e-a107-0d88d9bc7dd5" />

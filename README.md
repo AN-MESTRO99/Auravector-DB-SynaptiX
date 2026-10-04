@@ -7,6 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Qdrant Engine](https://img.shields.io/badge/Vector_DB-Qdrant-DC2626?style=for-the-badge)](https://qdrant.tech/)
 [![Retrieval Pipeline](https://img.shields.io/badge/Pipeline-BM25_%2B_Dense_%2B_RRF_%2B_Cross--Encoder-6366F1?style=for-the-badge)](https://github.com/)
+<img width="1259" height="564" alt="image" src="https://github.com/user-attachments/assets/2d9f7293-c7e5-441e-ba36-34b615675245" />
 
 ---
 

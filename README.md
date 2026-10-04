@@ -30,44 +30,8 @@ AuraVector DB resolves these failure modes through a multi-stage hybrid retrieva
 * **Dimensional Entropy & Topology Analysis:** Computes SVD cumulative variance metrics to measure dimensional density across top candidate sets[cite: 1, 3].
 
 ### System Architecture Flow
-                 ┌──────────────────────────────────────┐
-                 │          User Input Query            │
-                 └──────────────────┬───────────────────┘
-                                    │
-                     ┌──────────────┴──────────────┐
-                     ▼                             ▼
-          ┌─────────────────────┐       ┌────────────────────┐
-          │ Pre-Retrieval Filter│       │ Query Cache Lookup │
-          │   (FR-4 Metadata)   │       │   (In-Memory LRU)  │
-          └──────────┬──────────┘       └──────────┬─────────┘
-                     │                             │
-    ┌────────────────┴────────────────┐            │ (Cache Hit)
-    ▼                                 ▼            
-   ┌──────────────┐                  ┌───────────────┐     │
-   │ Dense Search │                  │ BM25 Sparse   │     │
-   │ (Qdrant DB)  │                  │ Keyword Engine│     │
-   └───────┬──────┘                  └───────┬──────┘      │
-           │                                 │             │
-           └────────────────┬────────────────┘             │
-                            ▼                              │
-                ┌──────────────────────────┐               │
-                │ Reciprocal Rank Fusion   │               │
-                │      (RRF k=60)          │               │
-                └────────────┬─────────────┘               │
-                             ▼                             │
-                ┌──────────────────────────┐               │
-                │ Cross-Encoder Rescoring  │               │
-                │ (MiniLM-L-6-v2 Reranker) │               │
-                └────────────┬─────────────┘               │
-                             ▼                             │
-                ┌──────────────────────────┐               │
-                │ Top-5 Verified Contexts  │◄──────────────┘
-               └────────────┬─────────────┘
-                            ▼
-              ┌──────────────────────────┐
-              │   RAGAS LLM Evaluation   │
-              │   (Groq / Llama-3.1-70B) │
-              └──────────────────────────┘
+<img width="3353" height="5819" alt="RAG Retrieval Pipeline for-2026-10-04-031737" src="https://github.com/user-attachments/assets/fe95801e-1057-469e-a107-0d88d9bc7dd5" />
+
 
 ---
 

@@ -115,8 +115,9 @@ Evaluated on 100,000 MS MARCO passage contexts against the competition non-funct
 
 ### 1. Repository Setup
 ```bash
-git clone [https://github.com/your-org/auravector-db-synaptix.git](https://github.com/your-org/auravector-db-synaptix.git)
+git clone https://github.com/your-org/auravector-db-synaptix.git
 cd auravector-db-synaptix
+```
 
 ### 2. Environment Configuration
 Create a virtual environment and install dependencies:
@@ -125,16 +126,21 @@ Create a virtual environment and install dependencies:
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
 
 ### 3. API Key Setup (Optional for RAGAS Scoring)
-Configure your .env file to enable Groq LLM-judged RAGAS evaluation:
+Configure your `.env` file to enable Groq LLM-judged RAGAS evaluation:
 
 ```bash
 echo "GROQ_API_KEY=your_groq_api_key_here" > .env
+```
 
 ### 4. Run Application
 ```bash
 streamlit run app.py
+```
+
+---
 
 
 ## 👥 Team SynaptiX (BIT Mesra)

@@ -12,7 +12,7 @@
 ---
 
 ## 📌 Problem Statement & Core Challenge
-Retrieval-Augmented Generation (RAG) connects Large Language Models to private enterprise corpora. However, standard dense-only vector search frequently fails at scale due to **semantic vs. factual divergence**: dense embeddings retrieve passages that match the general topic but miss exact model codes, product identifiers, or numeric values[cite: 1]. Passing these close-but-wrong contexts into an LLM triggers a **hallucination cascade**, undermining enterprise reliability.
+Retrieval-Augmented Generation (RAG) connects Large Language Models to private enterprise corpora. However, standard dense-only vector search frequently fails at scale due to **semantic vs. factual divergence**: dense embeddings retrieve passages that match the general topic but miss exact model codes, product identifiers, or numeric values. Passing these close-but-wrong contexts into an LLM triggers a **hallucination cascade**, undermining enterprise reliability.
 
 ### Key Failure Modes Targeted:
 1. **Semantic Drift:** Cosine distance over embeddings misses exact lexical entities (names, serial numbers, financial codes).

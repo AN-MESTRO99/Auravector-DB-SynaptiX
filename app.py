@@ -142,7 +142,7 @@ st.markdown("""
 
 @st.cache_resource
 def initialize_system():
-    """Generates 100 unique MS MARCO topic passages and initializes Qdrant index."""
+    """Generates unique MS MARCO topic passages and initializes Qdrant index."""
     base_domains = [
         "Singular Value Decomposition (SVD) performs dimensionality reduction by isolating principal variance across latent semantic space dimensions.",
         "BM25 keyword search calculates term frequency and inverse document frequency saturation for sparse lexical retrieval ranking.",
@@ -247,7 +247,7 @@ with st.sidebar:
     
     retrieval_mode = st.radio(
         "Search Pipeline Mode:",
-        ["Phase 1: Dense Vector Search (Baseline)", "Phase 2: Hybrid RRF Search + Reranker"]
+        ["Phase 1: Dense Vector Search (Baseline)", "Phase 2: Hybrid RRF Search + Cross-Encoder Reranker"]
     )
 
     st.markdown("---")
@@ -284,13 +284,17 @@ with st.sidebar:
         )
         if st.button("➕ Upsert Passage", use_container_width=True):
             engine.upsert_passage(new_id, new_text)
-            st.toast(f"Upserted document `{new_id}` into Qdrant!", icon="⚡")
+            if hasattr(pipeline, "clear_cache"):
+                pipeline.clear_cache()
+            st.toast(f"Upserted document `{new_id}` into Qdrant & cleared query cache!", icon="⚡")
 
     with mutation_tab_delete:
         del_id = st.text_input("Doc ID to Delete", "ms_marco_0", key="delete_id_input")
         if st.button("🗑️ Delete Passage", type="primary", use_container_width=True):
             if engine.delete_passage(del_id):
-                st.toast(f"Deleted `{del_id}` from Qdrant!", icon="🗑️")
+                if hasattr(pipeline, "clear_cache"):
+                    pipeline.clear_cache()
+                st.toast(f"Deleted `{del_id}` from Qdrant & cleared query cache!", icon="🗑️")
             else:
                 st.error(f"Document `{del_id}` not found in index.")
 
@@ -327,16 +331,24 @@ with tab_search:
     )
 
     if query:
+        is_cached = False
         if "Phase 1" in retrieval_mode:
             results = pipeline.dense_search(query, top_k=5, category_filter=category_filter)
             candidates = pipeline.dense_search(query, top_k=30, category_filter=category_filter)
             card_class = "passage-card"
+            score_type = "Cosine Score"
         else:
-            results = pipeline.hybrid_rrf_search(query, top_k=5, category_filter=category_filter)
+            search_out = pipeline.hybrid_rrf_search(query, top_k=5, category_filter=category_filter)
+            if isinstance(search_out, tuple):
+                results, is_cached = search_out
+            else:
+                results = search_out
+
             dense_cand = pipeline.dense_search(query, top_k=15, category_filter=category_filter)
             sparse_cand = pipeline.sparse_search(query, top_k=15)
             candidates = dense_cand + sparse_cand
             card_class = "passage-card passage-card-hybrid"
+            score_type = "Cross-Encoder Score" if getattr(pipeline, "reranker", None) is not None else "RRF Score"
 
         if candidates:
             cand_indices = []
@@ -368,7 +380,7 @@ with tab_search:
                     st.markdown(
                         f"""
                         <div class="{card_class}">
-                            <div class="score-badge">Rank #{idx+1} • Score: {score:.4f}</div>
+                            <div class="score-badge">Rank #{idx+1} • {score_type}: {score:.4f}</div>
                             <div style="color: #334155; font-size: 0.95rem; line-height: 1.5;">{text}</div>
                         </div>
                         """,
@@ -378,6 +390,14 @@ with tab_search:
             with col_info:
                 st.markdown("##### 🛠 Execution Metadata")
                 st.info(f"**Pipeline Mode:**\n\n{retrieval_mode}")
+                
+                if is_cached:
+                    st.success("⚡ **Query Cache Hit:** Served in < 1 ms")
+                else:
+                    st.caption("ℹ️ Cache Miss (Calculated Live)")
+
+                reranker_status = "Active (`ms-marco-MiniLM-L-6-v2`)" if getattr(pipeline, "reranker", None) is not None else "Fallback (RRF)"
+                st.success(f"**Cross-Encoder Reranker:**\n\n{reranker_status}")
                 st.success(f"**SVD Entropy Concentration:**\n\n90% Entropy concentrated in top **{local_svd_dims} / 384** dimensions across candidate pool.")
                 if category_filter:
                     st.warning(f"**Metadata Filter:** `category == '{category_filter}'`")
